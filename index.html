@@ -98,6 +98,12 @@ svg text{fill:var(--text2);font-size:11px}
 .notes{font-size:12px;color:var(--text2);margin-top:16px}
 .notes li{margin:3px 0}
 #app{display:none}
+#rosterPanel{display:none;margin-bottom:14px}
+#rosterPanel textarea{width:100%;min-height:180px;font:13px/1.4 ui-monospace,Menlo,monospace;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px}
+#rosterPanel .row{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center}
+.rnote{font-size:12px;color:var(--text2)}
+.Former{background:var(--neutral-bg);color:var(--muted);text-decoration:line-through}
+.NoData{background:var(--brand-soft);color:var(--brand)}
 .ovgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
 .ov{min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;background:var(--bg)}
 .ov:hover{border-color:var(--brand)}
@@ -131,6 +137,8 @@ svg text{fill:var(--text2);font-size:11px}
     <div class="actions">
       <button id="dlAll">Download full Excel report</button>
       <button id="dlChap" class="ghost" disabled>Download chapter report</button>
+      <button id="rosterBtn" class="ghost" disabled title="Pick a chapter first">Chapter roster</button>
+      <span class="rnote" id="rosterNote"></span>
       <button id="reset" class="ghost">Clear files</button>
     </div>
     <div class="filters">
@@ -149,6 +157,17 @@ svg text{fill:var(--text2);font-size:11px}
       <select id="fMember" aria-label="Member" disabled><option value="">Pick a chapter first</option></select>
       <select id="fStatus" aria-label="Status"></select>
       <input id="fSearch" type="search" placeholder="Search member…" aria-label="Search member">
+    </div>
+    <div class="card" id="rosterPanel">
+      <h2 id="rosterTitle">Current members</h2>
+      <p class="rnote">Paste your chapter's current member list – one name per line, or copy the whole table from your chapter's <b>Member List</b> page on the BNI website (only the first column is used). Anyone in the Power of One data who isn't on this list is marked <b>Former member</b> and left out of the chapter's numbers. Names with no data yet are added as <b>New – no data yet</b>. The roster is saved in this browser only.</p>
+      <textarea id="rosterText" spellcheck="false" aria-label="Chapter roster"></textarea>
+      <div class="row">
+        <button id="rosterSave">Save roster</button>
+        <button id="rosterClear" class="ghost">Remove roster</button>
+        <button id="rosterCancel" class="ghost">Close</button>
+        <span class="rnote" id="rosterMsg"></span>
+      </div>
     </div>
     <div class="tiles" id="tiles"></div>
     <div class="card" style="margin-bottom:14px">
@@ -313,12 +332,84 @@ function analyze(){
       h: ends.map(e => H[k]?.[e] ?? null) };
   }).sort((a,b) => a.r.localeCompare(b.r) || a.c.localeCompare(b.c) || (b.cur??-1)-(a.cur??-1));
   D = { reports, NR, ends, members, rows };
+  applyRosters();
   startUI();
 }
 
+/* ---------- chapter rosters (saved in this browser only) ---------- */
+const RKEY = "po1-rosters-v1";
+function loadRosters(){ try { return JSON.parse(localStorage.getItem(RKEY) || "{}") || {}; } catch(e){ return {}; } }
+function saveRosters(r){ try { localStorage.setItem(RKEY, JSON.stringify(r)); return true; } catch(e){ return false; } }
+let ROSTERS = loadRosters();   // { chapter: { names:[...], saved:"ISO date" } }
+const nameKey = n => String(n).toLowerCase().replace(/\([^)]*\)/g," ").replace(/[^a-z\s'-]/g," ").replace(/\s+/g," ").trim();
+const firstLast = k => { const t = k.split(" ").filter(Boolean); return t.length ? t[0]+" "+t[t.length-1] : k; };
+function parseRoster(text){
+  const out = [], seen = new Set();
+  for (let line of String(text).split(/\r?\n/)){
+    let n = line.split("\t")[0].trim();
+    if (!n || /^(member names?|name|showing \d+ to)/i.test(n) || /^\d+$/.test(n)) continue;
+    n = n.replace(/\s+/g," ");
+    const k = nameKey(n); if (!k || seen.has(k)) continue;
+    seen.add(k); out.push(n);
+  }
+  return out;
+}
+function rosterMatch(names){
+  const exact = new Map(), fl = new Map();
+  names.forEach(n => { const k = nameKey(n); exact.set(k, n); fl.set(firstLast(k), n); });
+  return m => { const k = nameKey(m.n); return exact.get(k) ?? fl.get(firstLast(k)) ?? null; };
+}
+function applyRosters(){
+  D.members = D.members.filter(m => !m.stub);
+  D.members.forEach(m => { if (m.former){ m.former = false; m.st = m.st0; } m.st0 = m.st; });
+  for (const [ch, ro] of Object.entries(ROSTERS)){
+    if (!ro?.names?.length) continue;
+    const match = rosterMatch(ro.names), found = new Set();
+    const inCh = D.members.filter(m => m.c === ch);
+    if (!inCh.length) continue;   // chapter not in these files
+    inCh.forEach(m => { const hit = match(m); if (hit) found.add(hit); else { m.former = true; m.st = "Former member"; } });
+    const region = inCh[0].r;
+    ro.names.filter(n => !found.has(n)).forEach(n => D.members.push({ key:"roster|"+ch+"|"+n, n, c:ch, r:region, st:"New – no data yet", st0:"New – no data yet",
+      stub:true, cur:null, d1:null, dA:null, slope:null, months:0, weeks:null, f:"—", gain:"—", drop:"—", mv:"", m:D.reports.map(()=>null), last:null, h:D.ends.map(()=>null) }));
+  }
+}
+function rosterSummary(ch){
+  const ro = ROSTERS[ch]; if (!ro) return "";
+  const f = D.members.filter(m => m.c===ch && m.former).length, n = D.members.filter(m => m.c===ch && m.stub).length;
+  return `Roster: ${ro.names.length} current members · ${n} new without data · ${f} former (saved ${new Date(ro.saved).toLocaleDateString()})`;
+}
+function refreshRosterUI(){
+  const ch = $("fChapter").value;
+  $("rosterBtn").disabled = !ch; $("rosterBtn").title = ch ? "" : "Pick a chapter first";
+  $("rosterNote").textContent = ch ? rosterSummary(ch) : "";
+  if (!ch) $("rosterPanel").style.display = "none";
+}
+$("rosterBtn").onclick = () => {
+  const ch = $("fChapter").value; if (!ch) return;
+  $("rosterTitle").textContent = `Current members – ${ch}`;
+  $("rosterText").value = (ROSTERS[ch]?.names || []).join("\n");
+  $("rosterMsg").textContent = ROSTERS[ch] ? "" : "No roster saved yet – everyone in the data counts as a member.";
+  $("rosterPanel").style.display = "block"; $("rosterText").focus();
+};
+$("rosterCancel").onclick = () => { $("rosterPanel").style.display = "none"; };
+function reapply(msg){
+  const keep = selected?.key; applyRosters(); selected = D.members.find(m => m.key === keep) || null;
+  refreshMembers(); render(); chapterTable(); refreshRosterUI(); if (selected) detail(selected);
+  $("rosterMsg").textContent = msg;
+}
+$("rosterSave").onclick = () => {
+  const ch = $("fChapter").value, names = parseRoster($("rosterText").value);
+  if (!names.length){ $("rosterMsg").textContent = "No names found – paste at least one name."; return; }
+  ROSTERS[ch] = { names, saved: new Date().toISOString() };
+  const ok = saveRosters(ROSTERS);
+  $("rosterText").value = names.join("\n");
+  reapply(`Saved ${names.length} names.${ok ? "" : " (This browser blocked saving, so it will reset when you reload.)"}`);
+};
+$("rosterClear").onclick = () => { const ch = $("fChapter").value; delete ROSTERS[ch]; saveRosters(ROSTERS); $("rosterText").value = ""; reapply("Roster removed – everyone in the data counts again."); };
+
 /* ---------- UI ---------- */
 const fmtD = v => v==null ? '<span class="muted">—</span>' : v>0 ? `<span class="up">▲ ${v}</span>` : v<0 ? `<span class="dn">▼ ${-v}</span>` : '<span class="muted">0</span>';
-const chipCls = s => s.startsWith("New") ? "New" : s.startsWith("Not") ? "Gone" : s;
+const chipCls = s => s.startsWith("Former") ? "Former" : s.startsWith("New –") ? "NoData" : s.startsWith("New") ? "New" : s.startsWith("Not") ? "Gone" : s;
 const uniq = a => [...new Set(a)].sort();
 function opts(el, label, vals){ const cur = el.value; el.innerHTML = `<option value="">${label}</option>` + vals.map(v=>`<option>${esc(v)}</option>`).join(""); if (vals.includes(cur)) el.value = cur; }
 let sortKey = "cur", sortDir = -1, selected = null;
@@ -368,20 +459,20 @@ function refreshMembers(){
   const c = $("fChapter").value, el = $("fMember");
   if (!c){ el.innerHTML = '<option value="">Pick a chapter first</option>'; el.disabled = true; return; }
   const list = D.members.map((m,i)=>[m,i]).filter(([m])=>m.c===c).sort((a,b)=>a[0].n.localeCompare(b[0].n));
-  el.innerHTML = `<option value="">All members (${list.length})</option>` + list.map(([m,i])=>`<option value="${i}">${esc(m.n)}${m.cur==null?" (not in latest)":""}</option>`).join("");
+  el.innerHTML = `<option value="">All members (${list.length})</option>` + list.map(([m,i])=>`<option value="${i}">${esc(m.n)}${m.former?" (former)":m.stub?" (new – no data)":m.cur==null?" (not in latest)":""}</option>`).join("");
   el.disabled = false; syncMember();
 }
 function syncMember(){ const el = $("fMember"); if (el.disabled) return; const i = selected ? D.members.indexOf(selected) : -1; el.value = [...el.options].some(o=>o.value===String(i)) ? String(i) : ""; }
 $("fMember").addEventListener("input", e => { const v = e.target.value; if (v === ""){ selected = null; render(); $("detail").innerHTML = '<div class="empty">Select a member to see their trend.</div>'; } else selectMember(D.members[+v]); });
-["fRegion","fChapter","fStatus","fSearch"].forEach(id => $(id).addEventListener("input", () => { if(id==="fRegion") refreshChapters(); if(id==="fChapter") refreshMembers(); $("dlChap").disabled = !$("fChapter").value; render(); }));
+["fRegion","fChapter","fStatus","fSearch"].forEach(id => $(id).addEventListener("input", () => { if(id==="fRegion") refreshChapters(); if(id==="fChapter"){ refreshMembers(); refreshRosterUI(); } $("dlChap").disabled = !$("fChapter").value; render(); }));
 
 function startUI(){
   $("app").style.display = "block";
   const R = D.reports;
-  $("sub").textContent = `${pLabel(R[0])} – ${pLabel(R[D.NR-1])} · ${D.NR} report${D.NR>1?"s":""} · latest covers ${MON[(R[D.NR-1]-6)%12]}–${pLabel(R[D.NR-1]-1)} · ${D.members.filter(m=>m.cur!=null).length} active members`;
+  $("sub").textContent = `${pLabel(R[0])} – ${pLabel(R[D.NR-1])} · ${D.NR} report${D.NR>1?"s":""} · latest covers ${MON[(R[D.NR-1]-6)%12]}–${pLabel(R[D.NR-1]-1)} · ${D.members.filter(m=>m.cur!=null && !m.former).length} active members`;
   opts($("fRegion"), "All regions", uniq(D.members.map(m=>m.r)));
-  opts($("fStatus"), "All statuses", ["Improving","Steady","Declining","New this month","New (≤2 months)","Not in latest report"]);
-  refreshChapters(); selected = null;
+  opts($("fStatus"), "Current members", ["Improving","Steady","Declining","New this month","New (≤2 months)","New – no data yet","Not in latest report","Former member"]);
+  refreshChapters(); refreshRosterUI(); selected = null;
   $("detail").innerHTML = '<div class="empty">Select a member to see their trend.</div>';
   render(); chapterTable();
 }
@@ -392,7 +483,7 @@ function filtered(){
     const v = mval(m.m[D.NR-1], k); if (v == null) return false;
     if (k >= 0) return v === +lv;
     return lv==="70" ? v>=70 : lv==="50" ? v>=50&&v<70 : lv==="30" ? v>=30&&v<50 : v<30; };
-  return D.members.filter(m => (!r||m.r===r) && (!c||m.c===c) && (!s||m.st===s) && (!q||m.n.toLowerCase().includes(q)) && lvOk(m));
+  return D.members.filter(m => (!r||m.r===r) && (!c||m.c===c) && (s ? m.st===s : !m.former) && (!q||m.n.toLowerCase().includes(q)) && lvOk(m));
 }
 function spark(m){
   const w=90,h=24,p=3,N=D.NR, k=catK(), max = k<0?100:20, ys=m.m.map(x=>mval(x,k));
@@ -485,6 +576,7 @@ function detail(m){
   const ptsCell = v => v==null ? '<td class="n muted">—</td>' : `<td class="n"><span class="pts" style="background:color-mix(in srgb, var(--series) ${Math.round(8+v/20*42)}%, transparent)">${v}</span></td>`;
   const rawFmt = (v,j) => v==null ? "—" : j===0 ? Math.round(v*100)+"%" : v.toFixed(2);
   const hasHist = m.h.some(v=>v!=null);
+  if (m.stub){ $("detail").innerHTML = `<h2>${esc(m.n)}</h2><div class="muted" style="margin:-4px 0 10px">${esc(m.c)} · <span class="chip NoData">New – no data yet</span></div><div class="empty">On the chapter roster, but not in any of the Power of One files loaded yet. Their numbers will appear once a monthly report includes them.</div>`; return; }
   $("detail").innerHTML = `
     <h2>${esc(m.n)}</h2>
     <div class="muted" style="margin:-4px 0 10px">${esc(m.c)} · ${esc(m.r)} · <span class="chip ${chipCls(m.st)}">${esc(m.st)}</span>${m.mv?`<br>Chapter moves: ${esc(m.mv)}`:""}</div>
@@ -508,8 +600,8 @@ function detail(m){
   else lineChart($("mChart"), R.map(pShort), m.m.map(x=>x?.total ?? null), {h:190, aria:`${m.n} score by report`});
 }
 function chapterStats(){
-  const R = D.reports, g = {};
-  D.rows.forEach(r => { const k = r.region+"|"+r.chapter; ((g[k] ??= {region:r.region, chapter:r.chapter, by:{}}).by[r.period] ??= []).push(r); });
+  const R = D.reports, g = {}, gone = new Set(D.members.filter(m=>m.former).map(m=>m.key));
+  D.rows.filter(r => !gone.has(r.key)).forEach(r => { const k = r.region+"|"+r.chapter; ((g[k] ??= {region:r.region, chapter:r.chapter, by:{}}).by[r.period] ??= []).push(r); });
   return Object.values(g).map(c => {
     const s = R.map(p => c.by[p] ? avg(c.by[p].map(r=>r.total)) : null);
     const li = s.length-1, fi = s.findIndex(v=>v!=null);
@@ -530,7 +622,7 @@ function summaryRows(list){
   return list.map(m => { const o = {Region:m.r, Chapter:m.c, Member:m.n};
     R.forEach((p,i) => o[pLabel(p)] = m.m[i]?.total ?? null);
     Object.assign(o, {"1-Mo Change":m.d1, "Change Since First":m.dA, "Trend (pts/mo)":m.slope, "Months Reported":m.months, Status:m.st,
-      "Weeks of Data (latest)":m.weeks, "Attendance %":m.last.raw[0], "Ref/Wk":m.last.raw[1], "Visitor/Wk":m.last.raw[2], "121/Wk":m.last.raw[3], "CEU/Wk":m.last.raw[4],
+      "Weeks of Data (latest)":m.weeks, "Attendance %":m.last?.raw[0] ?? null, "Ref/Wk":m.last?.raw[1] ?? null, "Visitor/Wk":m.last?.raw[2] ?? null, "121/Wk":m.last?.raw[3] ?? null, "CEU/Wk":m.last?.raw[4] ?? null,
       "Focus Area (lowest pts)":m.f, "Biggest Gain":m.gain, "Biggest Drop":m.drop, "Chapter Moves":m.mv});
     return o; });
 }
@@ -546,7 +638,7 @@ function download(list, name, includeAll){
   const chs = new Set(list.map(m=>m.c));
   XLSX.utils.book_append_sheet(wb, sheet(chapterStats().filter(c=>includeAll||chs.has(c.chapter)).map(c => { const o = {Region:c.region, Chapter:c.chapter}; R.forEach((p,i)=>o[pLabel(p)] = c.s[i]==null?null:Math.round(c.s[i]*10)/10); Object.assign(o, {"Members (latest)":c.n, "1-Mo Change":c.d1==null?null:Math.round(c.d1*10)/10, "Change Since First":c.dA==null?null:Math.round(c.dA*10)/10}); return o; }), {Chapter:32, Region:28}), "Chapter Trends");
   if (includeAll){
-    const act = list.filter(m => m.cur!=null && m.months>1);
+    const act = list.filter(m => m.cur!=null && m.months>1 && !m.former);
     const top = (arr) => arr.map(m => ({Region:m.r, Chapter:m.c, Member:m.n, First:m.m.find(Boolean).total, Latest:m.cur, Change:m.dA}));
     XLSX.utils.book_append_sheet(wb, sheet(top([...act].sort((a,b)=>b.dA-a.dA).slice(0,25)), {Chapter:32, Member:24, Region:28}), "Top Improvers");
     XLSX.utils.book_append_sheet(wb, sheet(top([...act].sort((a,b)=>a.dA-b.dA).slice(0,25)), {Chapter:32, Member:24, Region:28}), "Top Decliners");
@@ -558,7 +650,7 @@ function download(list, name, includeAll){
 const ym = p => `${Math.floor(p/12)}-${String(p%12+1).padStart(2,"0")}`;
 const span = () => `${ym(D.reports[0])} to ${ym(D.reports[D.NR-1])}`;
 $("dlAll").onclick = () => download(D.members, `Power of One Member Trends ${span()}.xlsx`, true);
-$("dlChap").onclick = () => { const c = $("fChapter").value; if (!c) return; download(D.members.filter(m=>m.c===c && m.cur!=null), `${c.replace(/[\\/:*?"<>|]/g,"-")} – Power of One Trends ${span()}.xlsx`, false); };
+$("dlChap").onclick = () => { const c = $("fChapter").value; if (!c) return; download(D.members.filter(m=>m.c===c && !m.former && (m.cur!=null || m.stub)), `${c.replace(/[\\/:*?"<>|]/g,"-")} – Power of One Trends ${span()}.xlsx`, false); };
 </script>
 </body>
 </html>

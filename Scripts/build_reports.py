@@ -62,7 +62,38 @@ for k, s in wide.iterrows():
            "Chapter Moves": " → ".join(chist) if len(chist) > 1 else "",
            "Biggest Drop": CATNAME[drop] + f" ({deltas[drop]:.0f})" if deltas[drop] < 0 else "—"}))
 summ = pd.DataFrame(rows)
-summ = summ[[c for c in summ.columns if c != "Chapter Moves"] + ["Chapter Moves"]].sort_values(["Region","Chapter",lab[latest]], ascending=[True,True,False])
+summ = summ[[c for c in summ.columns if c != "Chapter Moves"] + ["Chapter Moves"]]
+
+# ---------------- chapter rosters (Source Data/Rosters/<Chapter>.csv, one name per line) ----------------
+def name_key(n):
+    n = re.sub(r"\([^)]*\)", " ", str(n).lower()); n = re.sub(r"[^a-z\s'-]", " ", n)
+    return re.sub(r"\s+", " ", n).strip()
+first_last = lambda k: (lambda t: f"{t[0]} {t[-1]}" if t else k)(k.split())
+rosters = {}
+rdir = os.path.join(BASE, "Source Data", "Rosters")
+if os.path.isdir(rdir):
+    for f in sorted(os.listdir(rdir)):
+        if f.lower().endswith((".csv", ".txt")):
+            lines = [l.split(",")[0].split("\t")[0].strip() for l in open(os.path.join(rdir, f), encoding="utf-8-sig")]
+            names = [l for l in lines if l and not re.match(r"^(member names?|name)$", l, re.I)]
+            if names: rosters[os.path.splitext(f)[0]] = names
+former_keys = set(); stubs = []
+for chn, names in rosters.items():
+    inch = summ[summ.Chapter == chn]
+    if inch.empty: print(f"Roster '{chn}': chapter not found in data – skipped"); continue
+    exact = {name_key(n): n for n in names}; fl = {first_last(name_key(n)): n for n in names}
+    found = set()
+    for idx, r in inch.iterrows():
+        k = name_key(r.Member); hit = exact.get(k) or fl.get(first_last(k))
+        if hit: found.add(hit)
+        else: summ.loc[idx, "Status"] = "Former member"; former_keys.add(r.Key)
+    for n in names:
+        if n not in found:
+            stubs.append(dict(Key=f"roster|{chn}|{n}", Region=inch.Region.iloc[0], Chapter=chn, Member=n, Status="New – no data yet", **{"Months Reported": 0}))
+    print(f"Roster '{chn}': {len(names)} current · {len([s for s in stubs if s['Chapter']==chn])} new without data · {inch.Key.isin(former_keys).sum()} former")
+if stubs: summ = pd.concat([summ, pd.DataFrame(stubs)], ignore_index=True)
+summ = summ.sort_values(["Region","Chapter",lab[latest]], ascending=[True,True,False], na_position="last")
+df_stats = df[~df.Key.isin(former_keys)]   # chapter/region averages count current members only
 
 # ---------------- metric trends (long → wide per metric) ----------------
 metric_wide = {}
@@ -82,7 +113,7 @@ hw = hinfo.join(hw).reset_index(drop=True).rename(columns={"Name":"Member"}).sor
 
 # ---------------- chapter & region trends ----------------
 def grp(by):
-    g = df.groupby(by + ["Report"]).agg(Members=("Name","size"), AvgScore=("Total Score","mean"),
+    g = df_stats.groupby(by + ["Report"]).agg(Members=("Name","size"), AvgScore=("Total Score","mean"),
         Attendance=("Attendance","mean"), Ref=("Ref/Wk","mean"), Vis=("Visitor/Wk","mean"),
         OneToOne=("121/Wk","mean"), CEU=("CEU/Wk","mean"),
         At70=("Total Score", lambda s: (s >= 70).mean())).reset_index()
@@ -99,7 +130,7 @@ reg_w = reg.pivot_table(index="Region", columns="Report", values="AvgScore").rei
 reg_w.columns = [lab[c] for c in reg_w.columns]
 reg_w["Change Since First"] = reg_w[lab[latest]] - reg_w[lab[first]]
 reg_w = reg_w.reset_index()
-overall = df.groupby("Report").agg(Members=("Name","size"), AvgScore=("Total Score","mean"),
+overall = df_stats.groupby("Report").agg(Members=("Name","size"), AvgScore=("Total Score","mean"),
     Attendance=("Attendance","mean"), Ref=("Ref/Wk","mean"), Vis=("Visitor/Wk","mean"),
     OneToOne=("121/Wk","mean"), CEU=("CEU/Wk","mean"),
     At70=("Total Score", lambda s: (s >= 70).mean()), Under30=("Total Score", lambda s: (s < 30).mean()))
@@ -108,7 +139,8 @@ overall.index = [lab[r] for r in overall.index]
 # ---------------- workbook ----------------
 fname = f"Power of One Member Trends {first.strftime('%Y-%m')} to {latest.strftime('%Y-%m')}.xlsx"
 path = os.path.join(OUT, fname)
-active = summ[summ.Status != "Not in latest report"]
+GONE = ["Not in latest report", "Former member"]
+active = summ[~summ.Status.isin(GONE + ["New – no data yet"])]
 movers_up = active[active.Status.ne("New this month")].nlargest(25, "Change Since First")
 movers_dn = active[active.Status.ne("New this month")].nsmallest(25, "Change Since First")
 readme = pd.DataFrame({"Power of One – Member Trend Analysis": [
@@ -121,6 +153,7 @@ readme = pd.DataFrame({"Power of One – Member Trend Analysis": [
     "Score History (11 mo) comes from the 'Monthly' tab of each source file – a longer look-back for Total Score only.",
     "Members are matched by name across chapters (chapter moves are listed in 'Chapter Moves'); a name-spelling change will show as two rows. Chapter shown = most recent chapter.",
     "Sheets: Overview · Member Summary · Score History · one tab per metric · Chapter Trends · Region Trends · Top Movers · All Data.",
+    "Chapter rosters: put a file named '<Chapter>.csv' (one member name per line) in 'Source Data/Rosters'. Members not on it show as 'Former member' and are left out of chapter averages; roster names with no data show as 'New – no data yet'.",
     "To refresh: drop the new month's file in 'Source Data' (name starting YYYY-MM) and run Scripts/build_reports.py.",
 ]})
 with pd.ExcelWriter(path, engine="openpyxl") as xw:
@@ -204,7 +237,7 @@ wb.save(path)
 
 # ---------------- per-chapter workbooks ----------------
 cd = os.path.join(OUT, "Chapters"); os.makedirs(cd, exist_ok=True)
-for chn, g in summ[summ.Status != "Not in latest report"].groupby("Chapter"):
+for chn, g in summ[~summ.Status.isin(GONE)].groupby("Chapter"):
     p = os.path.join(cd, re.sub(r'[\\/:*?"<>|]', "-", chn) + ".xlsx")
     cols = ["Member"] + mlabs + ["Chapter Moves","1-Mo Change","Change Since First","Trend (pts/mo)","Status","Attendance %","Ref/Wk","Visitor/Wk","121/Wk","CEU/Wk","Focus Area (lowest pts)","Biggest Gain","Biggest Drop"]
     cr = chap[chap.Chapter == chn].copy(); cr["Report"] = cr.Report.map(lab)
@@ -212,8 +245,8 @@ for chn, g in summ[summ.Status != "Not in latest report"].groupby("Chapter"):
     with pd.ExcelWriter(p, engine="openpyxl") as xw:
         g.sort_values(lab[latest], ascending=False)[cols].to_excel(xw, sheet_name="Members", index=False)
         cr.to_excel(xw, sheet_name="Chapter Trend", index=False)
-        left = summ[(summ.Chapter == chn) & (summ.Status == "Not in latest report")]
-        if len(left): left[["Member"] + mlabs].to_excel(xw, sheet_name="No Longer Reported", index=False)
+        left = summ[(summ.Chapter == chn) & (summ.Status.isin(GONE))]
+        if len(left): left[["Member","Status"] + mlabs].to_excel(xw, sheet_name="No Longer Reported", index=False)
     wb2 = load_workbook(p); ws = wb2["Members"]
     hdr = style(ws, pct_cols=["Attendance %"], dec_cols=["Ref/Wk","Visitor/Wk","121/Wk","CEU/Wk"], score_cols=mlabs, chg_cols=["1-Mo Change","Change Since First","Trend (pts/mo)"], freeze="B2")
     for r in range(2, ws.max_row+1):
