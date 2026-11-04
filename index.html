@@ -108,6 +108,7 @@ svg text{fill:var(--text2);font-size:11px}
     <div class="filters">
       <select id="fRegion" aria-label="Region"></select>
       <select id="fChapter" aria-label="Chapter"></select>
+      <select id="fMember" aria-label="Member" disabled><option value="">Pick a chapter first</option></select>
       <select id="fStatus" aria-label="Status"></select>
       <input id="fSearch" type="search" placeholder="Search member…" aria-label="Search member">
     </div>
@@ -281,9 +282,19 @@ let sortKey = "cur", sortDir = -1, selected = null;
 const COLS = [["n","Member / chapter"],["spark","Trend"],["cur","Score","n"],["d1","1-mo","n"],["dA","Since first","n"],["st","Status"],["f","Focus area"]];
 $("tbl").innerHTML = "<thead><tr>" + COLS.map(([k,l,c])=>`<th data-k="${k}" class="${c||""}">${l}</th>`).join("") + "</tr></thead><tbody></tbody>";
 $("tbl").querySelector("thead").onclick = e => { const k = e.target.dataset.k; if(!k||k==="spark") return; sortDir = sortKey===k ? -sortDir : (k==="n"?1:-1); sortKey = k; render(); };
-$("tbl").querySelector("tbody").onclick = e => { const tr = e.target.closest("tr"); if(!tr) return; selected = D.members[+tr.dataset.i]; render(); detail(selected); };
-function refreshChapters(){ const r = $("fRegion").value; opts($("fChapter"), "All chapters", uniq(D.members.filter(m=>!r||m.r===r).map(m=>m.c))); }
-["fRegion","fChapter","fStatus","fSearch"].forEach(id => $(id).addEventListener("input", () => { if(id==="fRegion") refreshChapters(); $("dlChap").disabled = !$("fChapter").value; render(); }));
+function selectMember(m){ selected = m; syncMember(); render(); detail(m); if (innerWidth <= 900) $("detail").scrollIntoView({behavior:"smooth", block:"start"}); }
+$("tbl").querySelector("tbody").onclick = e => { const tr = e.target.closest("tr"); if(!tr) return; selectMember(D.members[+tr.dataset.i]); };
+function refreshChapters(){ const r = $("fRegion").value; opts($("fChapter"), "All chapters", uniq(D.members.filter(m=>!r||m.r===r).map(m=>m.c))); refreshMembers(); }
+function refreshMembers(){
+  const c = $("fChapter").value, el = $("fMember");
+  if (!c){ el.innerHTML = '<option value="">Pick a chapter first</option>'; el.disabled = true; return; }
+  const list = D.members.map((m,i)=>[m,i]).filter(([m])=>m.c===c).sort((a,b)=>a[0].n.localeCompare(b[0].n));
+  el.innerHTML = `<option value="">All members (${list.length})</option>` + list.map(([m,i])=>`<option value="${i}">${esc(m.n)}${m.cur==null?" (not in latest)":""}</option>`).join("");
+  el.disabled = false; syncMember();
+}
+function syncMember(){ const el = $("fMember"); if (el.disabled) return; const i = selected ? D.members.indexOf(selected) : -1; el.value = [...el.options].some(o=>o.value===String(i)) ? String(i) : ""; }
+$("fMember").addEventListener("input", e => { const v = e.target.value; if (v === ""){ selected = null; render(); $("detail").innerHTML = '<div class="empty">Select a member to see their trend.</div>'; } else selectMember(D.members[+v]); });
+["fRegion","fChapter","fStatus","fSearch"].forEach(id => $(id).addEventListener("input", () => { if(id==="fRegion") refreshChapters(); if(id==="fChapter") refreshMembers(); $("dlChap").disabled = !$("fChapter").value; render(); }));
 
 function startUI(){
   $("app").style.display = "block";
