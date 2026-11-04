@@ -69,6 +69,8 @@ button:disabled{opacity:.5;cursor:default}
 .filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
 .filters select,.filters input{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 10px;min-width:0;max-width:100%}
 .filters input{flex:1 1 220px}
+.filters .tog{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);cursor:pointer;white-space:nowrap}
+.filters .tog input{flex:none;width:16px;height:16px;padding:0;margin:0;accent-color:var(--brand)}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
 .tile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
 .tile .k{color:var(--text2);font-size:12px}
@@ -170,6 +172,7 @@ tr.hl{background:var(--brand-soft)}
       <select id="fMember" aria-label="Member" disabled><option value="">Pick a chapter first</option></select>
       <select id="fStatus" aria-label="Status"></select>
       <input id="fSearch" type="search" placeholder="Search member…" aria-label="Search member">
+      <label class="tog" title="Hides members who left (not on the chapter roster, or missing from the latest report)"><input type="checkbox" id="hideFormer" checked> Hide former members</label>
     </div>
     <div class="card" id="rosterPanel">
       <h2 id="rosterTitle">Current members</h2>
@@ -559,10 +562,17 @@ refreshPts();
 function selectMember(m){ selected = m; syncMember(); render(); detail(m); if (innerWidth <= 900) $("detail").scrollIntoView({behavior:"smooth", block:"start"}); }
 $("tbl").querySelector("tbody").onclick = e => { const tr = e.target.closest("tr"); if(!tr) return; selectMember(D.members[+tr.dataset.i]); };
 function refreshChapters(){ const r = $("fRegion").value; opts($("fChapter"), "All chapters", uniq(D.members.filter(m=>!r||m.r===r).map(m=>m.c))); refreshMembers(); }
+// "former" = not on the chapter roster, or no longer in the latest report
+const isGone = m => m.former || (m.cur == null && !m.stub);
+const hideGone = () => $("hideFormer").checked;
+$("hideFormer").addEventListener("change", () => {
+  if (selected && hideGone() && isGone(selected)){ selected = null; $("detail").innerHTML = '<div class="empty">Select a member to see their trend.</div>'; }
+  refreshMembers(); render();
+});
 function refreshMembers(){
   const c = $("fChapter").value, el = $("fMember");
   if (!c){ el.innerHTML = '<option value="">Pick a chapter first</option>'; el.disabled = true; return; }
-  const list = D.members.map((m,i)=>[m,i]).filter(([m])=>m.c===c).sort((a,b)=>a[0].n.localeCompare(b[0].n));
+  const list = D.members.map((m,i)=>[m,i]).filter(([m])=>m.c===c && !(hideGone() && isGone(m))).sort((a,b)=>a[0].n.localeCompare(b[0].n));
   el.innerHTML = `<option value="">All members (${list.length})</option>` + list.map(([m,i])=>`<option value="${i}">${esc(m.n)}${m.former?" (former)":m.stub?" (new – no data)":m.cur==null?" (not in latest)":""}</option>`).join("");
   el.disabled = false; syncMember();
 }
@@ -587,7 +597,7 @@ function filtered(){
     const v = mval(m.m[D.NR-1], k); if (v == null) return false;
     if (k >= 0) return v === +lv;
     return lv==="70" ? v>=70 : lv==="50" ? v>=50&&v<70 : lv==="30" ? v>=30&&v<50 : v<30; };
-  return D.members.filter(m => (!r||m.r===r) && (!c||m.c===c) && (s ? m.st===s : !m.former) && (!q||m.n.toLowerCase().includes(q)) && lvOk(m));
+  return D.members.filter(m => (!r||m.r===r) && (!c||m.c===c) && (s ? m.st===s : !(hideGone() && isGone(m))) && (!q||m.n.toLowerCase().includes(q)) && lvOk(m));
 }
 function spark(m){
   const w=90,h=24,p=3,N=D.NR, k=catK(), max = k<0?100:20, ys=m.m.map(x=>mval(x,k));
@@ -604,7 +614,7 @@ function render(){
   $("tbl").querySelector("thead").innerHTML = "<tr>" + cols.map(([k,l,c])=>`<th data-k="${k}" class="${c||""}">${l}${k===sc[0]?(sortDir>0?" ▲":" ▼"):""}</th>`).join("") + "</tr>";
   $("tbl").querySelector("tbody").innerHTML = list.slice(0, MAXROWS).map(m=>`<tr data-i="${idxOf(m)}" class="${m===selected?"sel":""}">` +
     cols.map(c=>`<td class="${c[2]||""}">${c[4](m)}</td>`).join("") + "</tr>").join("");
-  tiles(list); groupChart(list); overview(list); rankTable();
+  const stat = list.filter(m => !m.former); tiles(stat); groupChart(stat); overview(stat); rankTable();
 }
 function tiles(list){
   const N = D.NR, act = list.filter(m=>m.cur!=null);
