@@ -143,7 +143,10 @@ GONE = ["Not in latest report", "Former member"]
 active = summ[~summ.Status.isin(GONE + ["New – no data yet"])]
 movers_up = active[active.Status.ne("New this month")].nlargest(25, "Change Since First")
 movers_dn = active[active.Status.ne("New this month")].nsmallest(25, "Change Since First")
+APP_VERSION, APP_CREATED = "1.0", "November 4, 2026"
 readme = pd.DataFrame({"Power of One – Member Trend Analysis": [
+    f"Created by BNI Lakefront (Highland Park, IL) · built by Michael Federman, Keeping IT Easy · version {APP_VERSION} · created {APP_CREATED}.",
+    "Free for any BNI chapter to use – web version: https://keepingiteasy.github.io/power-of-one/ · Not an official BNI Global product.",
     f"Reports included: {', '.join(lab[r] for r in reports)} (each report covers the 6 months of PALMS data before it; e.g. {lab[latest]} = {win[latest]}).",
     f"Members in latest report: {len(active)} across {df[df.Report==latest].Chapter.nunique()} chapters.",
     "Score scale: 5 categories × 20 pts (Attendance, Referrals, Visitors, 1-to-1s, CEUs) = 100 max.",

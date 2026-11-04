@@ -1,8 +1,12 @@
 # Power of One – Member Trends
 
+**Created by BNI Lakefront** (Highland Park, IL) · built by Michael Federman, [Keeping IT Easy](https://keepingiteasy.net) · v1.0 · November 4, 2026
+
+Free for any BNI chapter to use. Not an official BNI Global product; BNI® is a registered trademark of BNI Global, LLC.
+
 Analyze BNI **Power of One** monthly reports per member and see how each person is trending.
 
-**Run it in your browser:** open the GitHub Pages site for this repo, then drop in two or more monthly
+**Run it in your browser:** open https://keepingiteasy.github.io/power-of-one/, then drop in two or more monthly
 Power of One `.xlsx` files (named starting with the report month, e.g. `2026-10 Power of One.xlsx`).
 Files are processed entirely in your browser — nothing is uploaded.
 

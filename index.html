@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Power of One Trends</title>
+<title>Power of One Trends · BNI Lakefront</title>
 <link rel="icon" type="image/png" href="assets/favicon.png">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="description" content="Analyze BNI Power of One monthly reports per member and show trends. Files are processed in your browser and never uploaded.">
@@ -46,6 +46,10 @@ body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-syste
 .brandin img{height:40px;width:auto;display:block}
 .brandin .divider{width:1px;align-self:stretch;background:rgba(255,255,255,.45);margin:4px 0}
 .eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.9;font-weight:600}
+.credit{margin-left:auto;text-align:right;font-size:12px;line-height:1.35}
+.credit b{display:block;font-size:14px;letter-spacing:.02em}
+.credit span{opacity:.9}
+@media(max-width:560px){.brandin{flex-wrap:wrap}.credit{margin-left:0;text-align:left;width:100%;border-top:1px solid rgba(255,255,255,.35);padding-top:8px}}
 h1{font-size:22px;margin:0}
 footer{max-width:1280px;margin:0 auto;padding:0 16px 32px;font-size:12px;color:var(--muted)}
 footer .rule{border-top:1px solid var(--border);padding-top:14px;display:flex;align-items:center;gap:14px}
@@ -120,6 +124,7 @@ svg text{fill:var(--text2);font-size:11px}
     <img src="assets/bni-logo-white.png" alt="BNI" width="104" height="40">
     <span class="divider" aria-hidden="true"></span>
     <div><div class="eyebrow">Power of One</div><h1>Member Trends</h1></div>
+    <div class="credit"><b>Created by BNI Lakefront</b><span>Highland Park, IL · <span id="verLine"></span></span></div>
   </div>
 </header>
 <div class="wrap">
@@ -197,9 +202,12 @@ svg text{fill:var(--text2);font-size:11px}
     </ul>
   </div>
 </div>
-<footer><div class="rule"><img src="assets/bni-proud-member.webp" alt="Proud BNI Member" width="75" height="48"><span>Independent tool by Keeping IT Easy for BNI chapter leadership – not an official BNI product. BNI® is a registered trademark of BNI Global, LLC. Your files are processed in this browser and never uploaded.</span></div></footer>
+<footer><div class="rule"><img src="assets/bni-proud-member.webp" alt="Proud BNI Member" width="75" height="48"><span><b>Power of One Member Trends – created by BNI Lakefront</b> (Highland Park, IL), built by Michael Federman of Keeping IT Easy. <span id="verFoot"></span><br>Free for any BNI chapter to use. Not an official BNI Global product; BNI® is a registered trademark of BNI Global, LLC. Your files are processed in this browser and never uploaded.</span></div></footer>
 <script>
 "use strict";
+const APP = { name:"Power of One Member Trends", version:"1.0", created:"November 4, 2026", by:"BNI Lakefront (Highland Park, IL)", builder:"Michael Federman, Keeping IT Easy", url:"https://keepingiteasy.github.io/power-of-one/" };
+document.getElementById("verLine").textContent = `v${APP.version} · ${APP.created}`;
+document.getElementById("verFoot").textContent = `Version ${APP.version} · created ${APP.created}.`;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const norm = s => s == null ? null : String(s).replace(/\s+/g, " ").trim();
@@ -645,6 +653,9 @@ function download(list, name, includeAll){
     XLSX.utils.book_append_sheet(wb, sheet(D.rows.map(r => ({Report:pLabel(r.period), Region:r.region, Chapter:r.chapter, Name:r.name, Weeks:r.weeks, "Total Score":r.total,
       Attendance:r.raw[0], "Att Pts":r.pts[0], "Ref/Wk":r.raw[1], "Ref Pts":r.pts[1], "Visitor/Wk":r.raw[2], "Visitor Pts":r.pts[2], "121/Wk":r.raw[3], "121 Pts":r.pts[3], "CEU/Wk":r.raw[4], "CEU Pts":r.pts[4]})), {Chapter:32, Name:24, Region:28}), "All Data");
   }
+  const about = XLSX.utils.aoa_to_sheet([[APP.name],["Created by", APP.by],["Built by", APP.builder],["Version", APP.version],["Created", APP.created],["Report generated", new Date().toLocaleString()],["Reports included", D.reports.map(pLabel).join(", ")],["Web page", APP.url],[],["Free for any BNI chapter to use. Not an official BNI Global product. BNI® is a registered trademark of BNI Global, LLC."]]);
+  about["!cols"] = [{wch:20},{wch:70}];
+  XLSX.utils.book_append_sheet(wb, about, "About");
   XLSX.writeFile(wb, name);
 }
 const ym = p => `${Math.floor(p/12)}-${String(p%12+1).padStart(2,"0")}`;
