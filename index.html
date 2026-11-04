@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Power of One Trends</title>
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="description" content="Analyze BNI Power of One monthly reports per member and show trends. Files are processed in your browser and never uploaded.">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
@@ -11,17 +13,17 @@
   color-scheme: light;
     --bg:#f4f4f5; --surface:#ffffff; --border:#dfe0e2; --grid:#ececee;
     --text:#1d1d1f; --text2:#54565a; --muted:#8b8d91;
-    --brand:#c8102e; --brand-ink:#ffffff; --brand-soft:#fbe7ea;
+    --brand:#d12031; --brand-ink:#ffffff; --brand-soft:#fbe7ea;
     --series:#54565a; --series-soft:rgba(200,16,46,.07);
     --good:#0f7a3d; --good-bg:#e3f4e8; --bad:#b42318; --bad-bg:#fde8e6; --neutral-bg:#efeff1; --new-bg:#ececee;
-    --btn:#c8102e; --btn-text:#fff;
+    --btn:#d12031; --btn-text:#fff;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     color-scheme: dark;
     --bg:#141415; --surface:#1d1d1f; --border:#333438; --grid:#2a2b2e;
     --text:#f2f2f3; --text2:#c4c5c9; --muted:#8e9094;
-    --brand:#c8102e; --brand-ink:#ffffff; --brand-soft:#3a1519;
+    --brand:#d12031; --brand-ink:#ffffff; --brand-soft:#3a1519;
     --series:#c4c5c9; --series-soft:rgba(232,72,90,.12);
     --good:#5fd08a; --good-bg:#16301f; --bad:#ff8a80; --bad-bg:#3a1a17; --neutral-bg:#27282b; --new-bg:#2a2b2e;
     --btn:#d42a3e; --btn-text:#fff;
@@ -31,7 +33,7 @@
   color-scheme: dark;
     --bg:#141415; --surface:#1d1d1f; --border:#333438; --grid:#2a2b2e;
     --text:#f2f2f3; --text2:#c4c5c9; --muted:#8e9094;
-    --brand:#c8102e; --brand-ink:#ffffff; --brand-soft:#3a1519;
+    --brand:#d12031; --brand-ink:#ffffff; --brand-soft:#3a1519;
     --series:#c4c5c9; --series-soft:rgba(232,72,90,.12);
     --good:#5fd08a; --good-bg:#16301f; --bad:#ff8a80; --bad-bg:#3a1a17; --neutral-bg:#27282b; --new-bg:#2a2b2e;
     --btn:#d42a3e; --btn-text:#fff;
@@ -41,11 +43,13 @@ body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-syste
 .wrap{max-width:1280px;margin:0 auto;padding:20px 16px 48px}
 .brandbar{background:var(--brand);color:var(--brand-ink);border-bottom:4px solid #54565a}
 .brandin{max-width:1280px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:16px}
-.brandin img{height:44px;width:auto;background:#fff;border-radius:6px;padding:4px 8px}
+.brandin img{height:40px;width:auto;display:block}
+.brandin .divider{width:1px;align-self:stretch;background:rgba(255,255,255,.45);margin:4px 0}
 .eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.9;font-weight:600}
 h1{font-size:22px;margin:0}
 footer{max-width:1280px;margin:0 auto;padding:0 16px 32px;font-size:12px;color:var(--muted)}
-footer .rule{border-top:1px solid var(--border);padding-top:12px}
+footer .rule{border-top:1px solid var(--border);padding-top:14px;display:flex;align-items:center;gap:14px}
+footer img{height:48px;width:auto;flex:none}
 :focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .sub{color:var(--text2);margin:0 0 18px}
 .drop{border:2px dashed var(--border);border-radius:14px;background:var(--surface);padding:28px 18px;text-align:center;margin-bottom:16px;transition:border-color .15s}
@@ -107,8 +111,9 @@ svg text{fill:var(--text2);font-size:11px}
 <body>
 <header class="brandbar">
   <div class="brandin">
-    <img src="assets/logo.png" alt="BNI" onerror="this.remove()">
-    <div><div class="eyebrow">BNI · Power of One</div><h1>Member Trends</h1></div>
+    <img src="assets/bni-logo-white.png" alt="BNI" width="104" height="40">
+    <span class="divider" aria-hidden="true"></span>
+    <div><div class="eyebrow">Power of One</div><h1>Member Trends</h1></div>
   </div>
 </header>
 <div class="wrap">
@@ -173,7 +178,7 @@ svg text{fill:var(--text2);font-size:11px}
     </ul>
   </div>
 </div>
-<footer><div class="rule">Independent tool by Keeping IT Easy for BNI chapter leadership – not an official BNI product. BNI® is a registered trademark of BNI Global, LLC. Your files are processed in this browser and never uploaded.</div></footer>
+<footer><div class="rule"><img src="assets/bni-proud-member.webp" alt="Proud BNI Member" width="75" height="48"><span>Independent tool by Keeping IT Easy for BNI chapter leadership – not an official BNI product. BNI® is a registered trademark of BNI Global, LLC. Your files are processed in this browser and never uploaded.</span></div></footer>
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
