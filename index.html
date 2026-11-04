@@ -84,6 +84,14 @@ svg text{fill:var(--text2);font-size:11px}
 .notes{font-size:12px;color:var(--text2);margin-top:16px}
 .notes li{margin:3px 0}
 #app{display:none}
+.ovgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.ov{min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;background:var(--bg)}
+.ov:hover{border-color:var(--series)}
+.ov.on{border-color:var(--series);box-shadow:0 0 0 1px var(--series)}
+.ov .k{font-size:12px;color:var(--text2);font-weight:600}
+.ov .v{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
+.ov .v small{font-size:12px;font-weight:400;color:var(--muted)}
+.ov .d{font-size:12px;color:var(--text2)}
 </style>
 </head>
 <body>
@@ -106,6 +114,16 @@ svg text{fill:var(--text2);font-size:11px}
       <button id="reset" class="ghost">Clear files</button>
     </div>
     <div class="filters">
+      <select id="fCat" aria-label="Category">
+        <option value="all">All categories</option>
+        <option value="-1">Total score</option>
+        <option value="0">Attendance</option>
+        <option value="1">Referrals</option>
+        <option value="2">Visitors</option>
+        <option value="3">1-to-1s</option>
+        <option value="4">CEUs</option>
+      </select>
+      <select id="fPts" aria-label="Score level"></select>
       <select id="fRegion" aria-label="Region"></select>
       <select id="fChapter" aria-label="Chapter"></select>
       <select id="fMember" aria-label="Member" disabled><option value="">Pick a chapter first</option></select>
@@ -113,6 +131,10 @@ svg text{fill:var(--text2);font-size:11px}
       <input id="fSearch" type="search" placeholder="Search member…" aria-label="Search member">
     </div>
     <div class="tiles" id="tiles"></div>
+    <div class="card" style="margin-bottom:14px">
+      <h2>Overview – every category <span class="muted" id="ovNote" style="font-weight:400"></span></h2>
+      <div class="ovgrid" id="ovGrid"></div>
+    </div>
     <div class="grid2">
       <div class="card">
         <h2>Members <span class="muted" id="count"></span></h2>
@@ -279,9 +301,45 @@ const chipCls = s => s.startsWith("New") ? "New" : s.startsWith("Not") ? "Gone" 
 const uniq = a => [...new Set(a)].sort();
 function opts(el, label, vals){ const cur = el.value; el.innerHTML = `<option value="">${label}</option>` + vals.map(v=>`<option>${esc(v)}</option>`).join(""); if (vals.includes(cur)) el.value = cur; }
 let sortKey = "cur", sortDir = -1, selected = null;
-const COLS = [["n","Member / chapter"],["spark","Trend"],["cur","Score","n"],["d1","1-mo","n"],["dA","Since first","n"],["st","Status"],["f","Focus area"]];
-$("tbl").innerHTML = "<thead><tr>" + COLS.map(([k,l,c])=>`<th data-k="${k}" class="${c||""}">${l}</th>`).join("") + "</tr></thead><tbody></tbody>";
-$("tbl").querySelector("thead").onclick = e => { const k = e.target.dataset.k; if(!k||k==="spark") return; sortDir = sortKey===k ? -sortDir : (k==="n"?1:-1); sortKey = k; render(); };
+const METRICS = [{k:-1, n:"Total score", max:100}, ...CAT.map((n,k)=>({k, n, max:20}))];
+const catSel = () => $("fCat").value;                       // "all" or "-1".."4"
+const catK = () => catSel()==="all" ? -1 : +catSel();
+const mval = (x,k) => x ? (k<0 ? x.total : x.pts[k]) : null;
+const rawFmt = (v,j) => v==null ? "—" : j===0 ? Math.round(v*100)+"%" : v.toFixed(2);
+const RAWU = ["attendance","referrals/wk","visitors/wk","1-to-1s/wk","CEUs/wk"];
+function view(m){
+  const k = catK(), ys = m.m.map(x=>mval(x,k)), N = D.NR;
+  const fi = ys.findIndex(v=>v!=null), cur = ys[N-1], pv = N>1 ? ys[N-2] : null;
+  return { ys, cur, d1: cur!=null&&pv!=null ? cur-pv : null, dA: cur!=null&&fi>=0&&fi<N-1 ? cur-ys[fi] : null,
+    raw: k>=0 && m.m[N-1] ? m.m[N-1].raw[k] : null };
+}
+const ptsChip = v => v==null ? '<span class="muted">—</span>' : `<span class="pts" style="background:rgba(57,135,229,${(0.08+v/20*0.42).toFixed(2)})">${v}</span>`;
+const normCols = cols => cols.map(c => c.length===4 && typeof c[2]==="function" ? [c[0],c[1],null,c[2],c[3]] : c);
+function columns(){ return normCols(buildCols()); }
+function buildCols(){
+  const k = catK(), name = ["n","Member / chapter", m=>m.n, m=>`<div>${esc(m.n)}</div><div class="muted" style="font-size:11px">${esc(m.c)}</div>`];
+  const status = ["st","Status", m=>m.st, m=>`<span class="chip ${chipCls(m.st)}">${esc(m.st)}</span>`];
+  if (catSel()==="all") return [name,
+    ["tot","Total","n", m=>m.cur, m=>`<b>${m.cur??"—"}</b>`],
+    ...CAT.map((c,j)=>["p"+j, c,"n", m=>m.m[D.NR-1]?.pts[j] ?? null, m=>ptsChip(m.m[D.NR-1]?.pts[j])]), status];
+  const cols = [name, ["spark","Trend",null,null, m=>spark(m)],
+    ["cur", k<0?"Score":"Points","n", m=>m.v.cur, m=>`<b>${m.v.cur??"—"}</b>`],
+    ["d1","1-mo","n", m=>m.v.d1, m=>fmtD(m.v.d1)], ["dA","Since first","n", m=>m.v.dA, m=>fmtD(m.v.dA)]];
+  if (k>=0) cols.push(["raw", CAT[k]==="Attendance" ? "Attendance" : "Per week","n", m=>m.v.raw, m=>rawFmt(m.v.raw,k)]);
+  cols.push(status);
+  if (k<0) cols.push(["f","Focus area",null, m=>m.f, m=>esc(m.f)]);
+  return cols;
+}
+$("tbl").querySelector("thead").onclick = e => { const k = e.target.closest("th")?.dataset.k; if(!k||k==="spark") return; sortDir = sortKey===k ? -sortDir : (k==="n"||k==="st"?1:-1); sortKey = k; render(); };
+function refreshPts(){
+  const k = catSel(), el = $("fPts");
+  const o = k==="all" ? [] : k==="-1" ? [["70","70 or more"],["50","50–69"],["30","30–49"],["0","Under 30"]] : [20,15,10,5,0].map(v=>[String(v), `${v} points`]);
+  el.innerHTML = `<option value="">${k==="all" ? "Pick a category to filter by level" : "Any level"}</option>` + o.map(([v,l])=>`<option value="${v}">${l}</option>`).join("");
+  el.disabled = k==="all";
+}
+$("fCat").addEventListener("input", () => { refreshPts(); if (!["n","st"].includes(sortKey)) { sortKey = catSel()==="all" ? "tot" : "cur"; sortDir = -1; } render(); });
+$("fPts").addEventListener("input", render);
+refreshPts();
 function selectMember(m){ selected = m; syncMember(); render(); detail(m); if (innerWidth <= 900) $("detail").scrollIntoView({behavior:"smooth", block:"start"}); }
 $("tbl").querySelector("tbody").onclick = e => { const tr = e.target.closest("tr"); if(!tr) return; selectMember(D.members[+tr.dataset.i]); };
 function refreshChapters(){ const r = $("fRegion").value; opts($("fChapter"), "All chapters", uniq(D.members.filter(m=>!r||m.r===r).map(m=>m.c))); refreshMembers(); }
@@ -308,23 +366,29 @@ function startUI(){
 }
 function filtered(){
   const r=$("fRegion").value, c=$("fChapter").value, s=$("fStatus").value, q=$("fSearch").value.trim().toLowerCase();
-  return D.members.filter(m => (!r||m.r===r) && (!c||m.c===c) && (!s||m.st===s) && (!q||m.n.toLowerCase().includes(q)));
+  const lv = $("fPts").value, k = catK(), lvOk = m => {
+    if (lv === "" || catSel()==="all") return true;
+    const v = mval(m.m[D.NR-1], k); if (v == null) return false;
+    if (k >= 0) return v === +lv;
+    return lv==="70" ? v>=70 : lv==="50" ? v>=50&&v<70 : lv==="30" ? v>=30&&v<50 : v<30; };
+  return D.members.filter(m => (!r||m.r===r) && (!c||m.c===c) && (!s||m.st===s) && (!q||m.n.toLowerCase().includes(q)) && lvOk(m));
 }
 function spark(m){
-  const w=90,h=24,p=3,N=D.NR, ys=m.m.map(x=>x?x.total:null);
-  const pts = ys.map((y,i)=>y==null?null:[p+(N>1?i*(w-2*p)/(N-1):w/2), h-p-(y/100)*(h-2*p)]);
+  const w=90,h=24,p=3,N=D.NR, k=catK(), max = k<0?100:20, ys=m.m.map(x=>mval(x,k));
+  const pts = ys.map((y,i)=>y==null?null:[p+(N>1?i*(w-2*p)/(N-1):w/2), h-p-(y/max)*(h-2*p)]);
   let d="", on=false; pts.forEach(q=>{ if(!q){on=false;return;} d+=(on?"L":"M")+q[0].toFixed(1)+" "+q[1].toFixed(1); on=true; });
   const last = pts.filter(Boolean).pop();
   return `<svg width="${w}" height="${h}" aria-hidden="true"><path d="${d}" fill="none" stroke="var(--series)" stroke-width="1.6"/>${last?`<circle cx="${last[0]}" cy="${last[1]}" r="2.5" fill="var(--series)"/>`:""}</svg>`;
 }
 function render(){
-  const list = filtered().sort((a,b)=>{ const x=a[sortKey], y=b[sortKey]; if(x==null) return 1; if(y==null) return -1; return (x>y?1:x<y?-1:0)*sortDir; });
+  const base = filtered(); base.forEach(m => m.v = view(m));
+  const cols = columns(), sc = cols.find(c=>c[0]===sortKey) || cols.find(c=>c[0]==="cur"||c[0]==="tot");
+  const list = base.sort((a,b)=>{ const x=sc[3](a), y=sc[3](b); if(x==null) return 1; if(y==null) return -1; return (x>y?1:x<y?-1:0)*sortDir; });
   $("count").textContent = `(${list.length})`;
-  $("tbl").querySelector("tbody").innerHTML = list.map(m=>`<tr data-i="${D.members.indexOf(m)}" class="${m===selected?"sel":""}">
-    <td><div>${esc(m.n)}</div><div class="muted" style="font-size:11px">${esc(m.c)}</div></td><td>${spark(m)}</td>
-    <td class="n"><b>${m.cur??"—"}</b></td><td class="n">${fmtD(m.d1)}</td><td class="n">${fmtD(m.dA)}</td>
-    <td><span class="chip ${chipCls(m.st)}">${esc(m.st)}</span></td><td>${esc(m.f)}</td></tr>`).join("");
-  tiles(list); groupChart(list);
+  $("tbl").querySelector("thead").innerHTML = "<tr>" + cols.map(([k,l,c])=>`<th data-k="${k}" class="${c||""}">${l}${k===sc[0]?(sortDir>0?" ▲":" ▼"):""}</th>`).join("") + "</tr>";
+  $("tbl").querySelector("tbody").innerHTML = list.map(m=>`<tr data-i="${D.members.indexOf(m)}" class="${m===selected?"sel":""}">` +
+    cols.map(c=>`<td class="${c[2]||""}">${c[4](m)}</td>`).join("") + "</tr>").join("");
+  tiles(list); groupChart(list); overview(list);
 }
 function tiles(list){
   const N = D.NR, act = list.filter(m=>m.cur!=null);
@@ -342,10 +406,10 @@ function tiles(list){
   ].map(([k,v,dd])=>`<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${dd}</div></div>`).join("");
 }
 function lineChart(el, labels, ys, o={}){
-  const W = Math.max(300, el.clientWidth||600), H = o.h||220, L=34, Rp=14, T=14, B=28, N = labels.length;
-  const x = i => N>1 ? L + i*(W-L-Rp)/(N-1) : (L+W-Rp)/2, y = v => T + (1-v/100)*(H-T-B);
+  const W = Math.max(o.minW ?? 300, el.clientWidth||600), H = o.h||220, L=34, Rp=14, T=14, B=28, N = labels.length;
+  const x = i => N>1 ? L + i*(W-L-Rp)/(N-1) : (L+W-Rp)/2, MX = o.max||100, y = v => T + (1-v/MX)*(H-T-B);
   let g = "";
-  [0,25,50,75,100].forEach(v=>{ g += `<line x1="${L}" x2="${W-Rp}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${L-6}" y="${y(v)+4}" text-anchor="end">${v}</text>`; });
+  [0,.25,.5,.75,1].map(f=>f*MX).forEach(v=>{ g += `<line x1="${L}" x2="${W-Rp}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${L-6}" y="${y(v)+4}" text-anchor="end">${v}</text>`; });
   const step = Math.max(1, Math.ceil(N/(W<500?4:8)));
   labels.forEach((l,i)=>{ const last=N-1; if(i===last||(i%step===0&&last-i>=step*0.75)) g += `<text x="${x(i)}" y="${H-8}" text-anchor="${i===last&&N>1?"end":"middle"}">${esc(l)}</text>`; });
   let d="", on=false; ys.forEach((v,i)=>{ if(v==null){on=false;return;} d += (on?"L":"M")+x(i).toFixed(1)+" "+y(v).toFixed(1); on=true; });
@@ -364,11 +428,36 @@ function lineChart(el, labels, ys, o={}){
   svg.addEventListener("mouseleave", ()=>{ tip.style.display="none"; xh.style.display="none"; });
 }
 function groupChart(list){
-  const ys = D.reports.map((_,i)=>avg(list.map(m=>m.m[i]?.total)));
-  const c=$("fChapter").value, r=$("fRegion").value, f = $("fStatus").value||$("fSearch").value;
-  $("grpTitle").textContent = `Average Total Score by report – ${c||r||"all members"}${f?" (filtered)":""}`;
-  lineChart($("grpChart"), D.reports.map(pShort), ys, {dec:1, name:"Avg score", h:200, aria:"Average score by month"});
+  const k = catK(), ys = D.reports.map((_,i)=>avg(list.map(m=>mval(m.m[i],k))));
+  const c=$("fChapter").value, r=$("fRegion").value, f = $("fStatus").value||$("fSearch").value||$("fPts").value;
+  const nm = k<0 ? "Total Score" : `${CAT[k]} points (of 20)`;
+  $("grpTitle").textContent = `Average ${nm} by report – ${c||r||"all members"}${f?" (filtered)":""}`;
+  lineChart($("grpChart"), D.reports.map(pShort), ys, {dec:1, name:"Average", h:200, max: k<0?100:20, aria:`Average ${nm} by month`});
 }
+function overview(list){
+  const N = D.NR, sel = catSel();
+  $("ovNote").textContent = `· ${list.length} member${list.length===1?"":"s"} in view · averages by report · click a card to focus on it`;
+  $("ovGrid").innerHTML = METRICS.map(mt => {
+    const ys = D.reports.map((_,i)=>avg(list.map(m=>mval(m.m[i],mt.k))));
+    const cur = ys[N-1], fi = ys.findIndex(v=>v!=null), ch = cur!=null&&fi>=0&&fi<N-1 ? cur-ys[fi] : null;
+    const act = list.filter(m=>m.m[N-1]);
+    let extra;
+    if (mt.k < 0){ const t = act.filter(m=>m.m[N-1].total>=70).length; extra = `${act.length?Math.round(100*t/act.length):0}% at 70+ · ${act.filter(m=>m.m[N-1].total<30).length} under 30`; }
+    else { const z = act.filter(m=>(m.m[N-1].pts[mt.k]??0)===0).length, full = act.filter(m=>m.m[N-1].pts[mt.k]===20).length;
+      extra = `avg ${rawFmt(avg(act.map(m=>m.m[N-1].raw[mt.k])), mt.k)} ${RAWU[mt.k]} · ${full} at 20 · ${z} at 0`; }
+    const chTxt = ch==null ? "" : ch>0 ? `<span class="up">▲ ${ch.toFixed(1)}</span>` : ch<0 ? `<span class="dn">▼ ${(-ch).toFixed(1)}</span>` : "no change";
+    return `<div class="ov ${String(mt.k)===sel?"on":""}" data-k="${mt.k}" role="button" tabindex="0">
+      <div class="k">${mt.n}</div>
+      <div class="v">${cur==null?"—":cur.toFixed(1)} <small>/ ${mt.max}</small></div>
+      <div class="d">${chTxt}${chTxt?` since ${pShort(D.reports[fi])}`:""}</div>
+      <div class="d">${extra}</div>
+      <div class="chart" data-c="${mt.k}"></div></div>`;
+  }).join("");
+  METRICS.forEach(mt => lineChart($("ovGrid").querySelector(`.chart[data-c="${mt.k}"]`), D.reports.map(pShort),
+    D.reports.map((_,i)=>avg(list.map(m=>mval(m.m[i],mt.k)))), {h:110, minW:160, max:mt.max, dec:1, name:"Average", aria:`${mt.n} average by month`}));
+}
+$("ovGrid").addEventListener("click", e => { const c = e.target.closest(".ov"); if (!c) return; $("fCat").value = c.dataset.k === catSel() ? "all" : c.dataset.k; $("fCat").dispatchEvent(new Event("input")); });
+$("ovGrid").addEventListener("keydown", e => { if (e.key==="Enter" && e.target.classList.contains("ov")) e.target.click(); });
 const winLabel = e => `${MON[(e-5)%12]}–${pShort(e)}`;
 function detail(m){
   const R = D.reports;
