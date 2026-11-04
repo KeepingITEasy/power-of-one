@@ -285,13 +285,21 @@ function parseFile(name, buf){
   return {name, period, rows, hist};
 }
 async function addFiles(fileList){
+  const files = Array.from(fileList || []);   // copy now: the browser empties the picker's list once it is reset
+  if (!files.length) return;
   const box = $("files");
-  for (const f of fileList){
+  box.querySelectorAll(".prog").forEach(e => e.remove());
+  box.insertAdjacentHTML("afterbegin", '<div class="prog"></div>');
+  const prog = box.querySelector(".prog");
+  for (const [i, f] of files.entries()){
+    prog.textContent = `Reading ${i+1} of ${files.length}: ${f.name}…`;
+    await new Promise(r => setTimeout(r, 0));   // let the message paint before the heavy parse
     try {
       const r = parseFile(f.name, await f.arrayBuffer());
       loaded = loaded.filter(x => x.period !== r.period).concat(r);
     } catch(e){ box.insertAdjacentHTML("beforeend", `<div class="err">✕ ${esc(f.name)}: ${esc(e.message)}</div>`); }
   }
+  prog.remove();
   loaded.sort((a,b) => a.period - b.period);
   box.querySelectorAll(".ok").forEach(e => e.remove());
   box.insertAdjacentHTML("afterbegin", loaded.map(x => `<div class="ok">✓ ${esc(pLabel(x.period))} — ${x.rows.length} members · ${esc(x.name)}</div>`).join(""));
@@ -300,8 +308,8 @@ async function addFiles(fileList){
 const drop = $("drop");
 ["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
 ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
-drop.addEventListener("drop", e => addFiles(e.dataTransfer.files));
-$("pick").addEventListener("change", e => { addFiles(e.target.files); e.target.value = ""; });
+drop.addEventListener("drop", e => addFiles(Array.from(e.dataTransfer.files)));
+$("pick").addEventListener("change", e => { const files = Array.from(e.target.files); e.target.value = ""; addFiles(files); });
 $("reset").onclick = () => { loaded = []; $("files").innerHTML = ""; $("app").style.display = "none"; };
 
 /* ---------- analysis ---------- */
