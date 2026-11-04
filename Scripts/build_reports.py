@@ -29,6 +29,7 @@ def slope(y):
 wide = df.pivot_table(index="Key", columns="Report", values="Total Score", aggfunc="first").reindex(columns=reports)
 info = df.sort_values("Report").groupby("Key").last()
 rows = []
+BYKEY = {k: g.sort_values("Report") for k, g in df.groupby("Key")}
 for k, s in wide.iterrows():
     i = info.loc[k]; vals = s.values.astype(float); have = ~np.isnan(vals)
     fi = int(np.argmax(have)); li = len(vals)-1-int(np.argmax(have[::-1]))
@@ -41,14 +42,15 @@ for k, s in wide.iterrows():
     elif sl >= 2 or chg_all >= 15: status = "Improving"
     elif sl <= -2 or chg_all <= -15: status = "Declining"
     else: status = "Steady"
-    last = df[(df.Key == k) & (df.Report == reports[li])].iloc[0]
-    firstrow = df[(df.Key == k) & (df.Report == reports[fi])].iloc[0]
+    gk = BYKEY[k]
+    last = gk[gk.Report == reports[li]].iloc[0]
+    firstrow = gk[gk.Report == reports[fi]].iloc[0]
     pts = {c: last[c] for _, c in CATS}
     focus = min(pts, key=lambda c: (pts[c], ["CEU Pts","Visitor Pts","Ref Pts","121 Pts","Att Pts"].index(c)))
     deltas = {c: last[c]-firstrow[c] for _, c in CATS}
     drop = min(deltas, key=deltas.get)
     gain = max(deltas, key=deltas.get)
-    chist = df[df.Key == k].sort_values("Report").Chapter.drop_duplicates().tolist()
+    chist = gk.Chapter.drop_duplicates().tolist()
     rows.append(dict(Key=k, Region=i.Region, Chapter=i.Chapter, Member=i.Name,
         **{lab[r]: v for r, v in zip(reports, vals)},
         **{"1-Mo Change": cur - pv if not (np.isnan(cur) or np.isnan(pv)) else np.nan,
@@ -141,6 +143,39 @@ fname = f"Power of One Member Trends {first.strftime('%Y-%m')} to {latest.strfti
 path = os.path.join(OUT, fname)
 GONE = ["Not in latest report", "Former member"]
 active = summ[~summ.Status.isin(GONE + ["New – no data yet"])]
+# ---------------- weighted rank ----------------
+W_LATEST, W_AVG, W_TREND = 0.5, 0.3, 0.2          # weights for the blended score
+def trend_score(sl): return float(np.clip(50 + 5 * (0 if np.isnan(sl) else sl), 0, 100))
+def weighted_table(upto):
+    """Score current members using reports[0..upto]; rank overall and within chapter."""
+    cols = reports[:upto + 1]; rows_ = []
+    for k in active.Key:
+        if k not in wide.index: continue
+        v = wide.loc[k, cols].values.astype(float)
+        if np.isnan(v[-1]): continue
+        have = ~np.isnan(v); sl = slope(v) if have.sum() >= 3 else np.nan
+        L, A, T = v[-1], np.nanmean(v), trend_score(sl)
+        rows_.append(dict(Key=k, Latest=L, Average=round(A, 1), TrendPts=None if np.isnan(sl) else round(sl, 1), TrendScore=round(T, 1),
+                          Weighted=round(W_LATEST * L + W_AVG * A + W_TREND * T, 1)))
+    t = pd.DataFrame(rows_).merge(active[["Key","Region","Chapter","Member"]], on="Key")
+    t["Overall Rank"] = t.Weighted.rank(ascending=False, method="min").astype(int)
+    t["Chapter Rank"] = t.groupby("Chapter").Weighted.rank(ascending=False, method="min").astype(int)
+    c = t.groupby(["Region","Chapter"]).agg(Members=("Key","size"), Weighted=("Weighted","mean"), Latest=("Latest","mean"),
+                                            Average=("Average","mean"), TrendScore=("TrendScore","mean")).reset_index()
+    c["Chapter Rank"] = c.Weighted.rank(ascending=False, method="min").astype(int)
+    return t, c
+wt, wc = weighted_table(len(reports) - 1)
+if len(reports) > 1:
+    pt, pc = weighted_table(len(reports) - 2)
+    wt = wt.merge(pt[["Key","Overall Rank"]].rename(columns={"Overall Rank":"Prev"}), on="Key", how="left")
+    wt["Rank Change"] = wt.Prev - wt["Overall Rank"]
+    wc = wc.merge(pc[["Chapter","Chapter Rank"]].rename(columns={"Chapter Rank":"Prev"}), on="Chapter", how="left")
+    wc["Rank Change"] = wc.Prev - wc["Chapter Rank"]
+wt = wt.sort_values("Overall Rank"); wc = wc.sort_values("Chapter Rank")
+rank_members = wt[["Overall Rank","Chapter Rank","Rank Change","Member","Chapter","Region","Weighted","Latest","Average","TrendPts","TrendScore"]].rename(columns={
+    "Weighted":"Weighted Score", "Latest":f"Latest ({lab[latest]})", "Average":"Avg of All Reports", "TrendPts":"Trend (pts/mo)", "TrendScore":"Trend Score (0-100)", "Rank Change":"Rank Change vs Last Month"})
+rank_chapters = wc[["Chapter Rank","Rank Change","Chapter","Region","Members","Weighted","Latest","Average","TrendScore"]].round(1).rename(columns={
+    "Weighted":"Avg Weighted Score", "Latest":f"Avg Latest ({lab[latest]})", "Average":"Avg of All Reports", "TrendScore":"Avg Trend Score", "Rank Change":"Rank Change vs Last Month"})
 movers_up = active[active.Status.ne("New this month")].nlargest(25, "Change Since First")
 movers_dn = active[active.Status.ne("New this month")].nsmallest(25, "Change Since First")
 APP_VERSION, APP_CREATED = "1.0", "November 4, 2026"
@@ -156,6 +191,7 @@ readme = pd.DataFrame({"Power of One – Member Trend Analysis": [
     "Score History (11 mo) comes from the 'Monthly' tab of each source file – a longer look-back for Total Score only.",
     "Members are matched by name across chapters (chapter moves are listed in 'Chapter Moves'); a name-spelling change will show as two rows. Chapter shown = most recent chapter.",
     "Sheets: Overview · Member Summary · Score History · one tab per metric · Chapter Trends · Region Trends · Top Movers · All Data.",
+    f"Weighted rank: score = {int(W_LATEST*100)}% latest score + {int(W_AVG*100)}% average of all reports + {int(W_TREND*100)}% trend (pts/month mapped to 0–100: flat = 50, +10/mo = 100, −10/mo = 0; under 3 months = 50). Current members only; chapters ranked by their members' average.",
     "Chapter rosters: put a file named '<Chapter>.csv' (one member name per line) in 'Source Data/Rosters'. Members not on it show as 'Former member' and are left out of chapter averages; roster names with no data show as 'New – no data yet'.",
     "To refresh: drop the new month's file in 'Source Data' (name starting YYYY-MM) and run Scripts/build_reports.py.",
 ]})
@@ -170,6 +206,8 @@ with pd.ExcelWriter(path, engine="openpyxl") as xw:
         metric_wide[raw].to_excel(xw, sheet_name=nm, index=False)
     chap_w.to_excel(xw, sheet_name="Chapter Trends", index=False)
     reg_w.to_excel(xw, sheet_name="Region Trends", index=False)
+    rank_members.to_excel(xw, sheet_name="Weighted Rank - Members", index=False)
+    rank_chapters.to_excel(xw, sheet_name="Weighted Rank - Chapters", index=False)
     movers_up[["Region","Chapter","Member",lab[first],lab[latest],"Change Since First","Biggest Gain"]].to_excel(xw, sheet_name="Top Movers", index=False, startrow=1)
     movers_dn[["Region","Chapter","Member",lab[first],lab[latest],"Change Since First","Biggest Drop"]].to_excel(xw, sheet_name="Top Movers", index=False, startrow=1, startcol=8)
     ad = df.copy(); ad["Report"] = ad.Report.astype(str)
@@ -229,6 +267,9 @@ ch = LineChart(); ch.title = "Region Average Score"; ch.height, ch.width = 9, 20
 for r in range(2, ws.max_row+1):
     ch.add_data(Reference(ws, min_col=1, max_col=len(reports)+1, min_row=r), from_rows=True, titles_from_data=True)
 ch.set_categories(Reference(ws, min_col=2, max_col=len(reports)+1, min_row=1)); ws.add_chart(ch, "A10")
+for nm in ["Weighted Rank - Members", "Weighted Rank - Chapters"]:
+    ws = wb[nm]; style(ws, chg_cols=["Rank Change vs Last Month"], score_cols=[c for c in [ "Weighted Score","Avg Weighted Score"]], freeze="E2" if "Members" in nm else "D2")
+    ws.column_dimensions["A"].width = 9; ws.column_dimensions["B"].width = 9; ws.column_dimensions["C"].width = 12
 ws = wb["Top Movers"]
 ws["A1"], ws["I1"] = f"Top 25 Improvers ({lab[first]} → {lab[latest]})", "Top 25 Decliners"
 ws["A1"].font = ws["I1"].font = Font(bold=True, size=12)
@@ -248,6 +289,8 @@ for chn, g in summ[~summ.Status.isin(GONE)].groupby("Chapter"):
     with pd.ExcelWriter(p, engine="openpyxl") as xw:
         g.sort_values(lab[latest], ascending=False)[cols].to_excel(xw, sheet_name="Members", index=False)
         cr.to_excel(xw, sheet_name="Chapter Trend", index=False)
+        rm = rank_members[rank_members.Chapter == chn].sort_values("Chapter Rank").drop(columns=["Chapter","Region"])
+        if len(rm): rm.to_excel(xw, sheet_name="Weighted Rank", index=False)
         left = summ[(summ.Chapter == chn) & (summ.Status.isin(GONE))]
         if len(left): left[["Member","Status"] + mlabs].to_excel(xw, sheet_name="No Longer Reported", index=False)
     wb2 = load_workbook(p); ws = wb2["Members"]
@@ -259,14 +302,16 @@ for chn, g in summ[~summ.Status.isin(GONE)].groupby("Chapter"):
     ch.add_data(Reference(ws, min_col=3, min_row=2, max_row=ws.max_row)); ch.set_categories(Reference(ws, min_col=1, min_row=2, max_row=ws.max_row))
     ws.add_chart(ch, "A12")
     if "No Longer Reported" in wb2.sheetnames: style(wb2["No Longer Reported"], score_cols=mlabs, freeze="B2")
+    if "Weighted Rank" in wb2.sheetnames: style(wb2["Weighted Rank"], chg_cols=["Rank Change vs Last Month"], score_cols=["Weighted Score"], freeze="D2")
     wb2.save(p)
 
 # ---------------- dashboard data ----------------
 H = hist.copy()
 members = []
+SUMM_BY = summ.drop_duplicates("Key").set_index("Key"); H_BY = {k: g.set_index("WindowEnd")["Score"] for k, g in H.groupby("Key")}
 for k, g in df.sort_values("Report").groupby("Key"):
-    s = summ[summ.Key == k].iloc[0]
-    hh = H[H.Key == k].set_index("WindowEnd")["Score"]
+    s = SUMM_BY.loc[k]
+    hh = H_BY.get(k, pd.Series(dtype=float))
     members.append(dict(n=s.Member, c=s.Chapter, r=s.Region, st=s.Status,
         cur=None if pd.isna(s[lab[latest]]) else float(s[lab[latest]]),
         d1=None if pd.isna(s["1-Mo Change"]) else float(s["1-Mo Change"]),

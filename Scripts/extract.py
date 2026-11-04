@@ -5,6 +5,11 @@ import pandas as pd
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(BASE, "Source Data")
 
+# Regions to include. Some monthly files are nationwide (70,000+ members); keeping the same
+# regions every month keeps the trends comparable. Set to None to include every region.
+REGIONS = ["IL Central", "IL Northern (Northeast Suburbs)", "IL Northern (South Suburbs)",
+           "IL Northern (West Suburbs)", "IA 2 (Cedar Rapids)"]
+
 def norm(s):
     return re.sub(r"\s+", " ", str(s)).strip() if s is not None else None
 
@@ -17,7 +22,9 @@ def load():
         x = pd.ExcelFile(f)
         p = pd.read_excel(x, "Power of One")
         mo = pd.read_excel(x, "Monthly")
+        if REGIONS: mo = mo[mo["Region"].isin(REGIONS)]
         p.columns = [norm(c) for c in p.columns]
+        raw_region = p["Region"].map(norm) if "Region" in p.columns else None
         # positional rename (duplicate 'Points' headers)
         cols = list(p.columns)
         start = cols.index("Total Score")
@@ -31,6 +38,8 @@ def load():
         mo["Chapter"] = mo["Chapter"].map(norm); mo["Name"] = mo["Name"].map(norm)
         reg = mo.drop_duplicates(["Chapter","Name"]).set_index(["Chapter","Name"])["Region"]
         p["Region"] = [reg.get((c,n)) for c,n in zip(p.Chapter, p.Name)]
+        if raw_region is not None: p["Region"] = p["Region"].fillna(raw_region.loc[p.index])
+        if REGIONS: p = p[p.Region.isin(REGIONS) | p.Region.isna()]   # drop other regions before name matching
         p["Report"] = period
         rows.append(p.drop(columns="NameWeeks"))
         # rolling-window score history from the Monthly sheet
@@ -52,6 +61,7 @@ def load():
     # fill missing region from any other month
     rmap = df.dropna(subset=["Region"]).drop_duplicates(["Chapter","Name"]).set_index(["Chapter","Name"])["Region"]
     df["Region"] = df["Region"].fillna(pd.Series([rmap.get((c,n)) for c,n in zip(df.Chapter, df.Name)]))
+    if REGIONS: df = df[df.Region.isin(REGIONS)].copy()
     h = pd.concat(hist, ignore_index=True)
     h["Key"] = [n + " | " + c if n in clash else n for n, c in zip(h.Name, h.Chapter)]
     h = h.sort_values("Source").drop_duplicates(["Key","WindowEnd"], keep="last")

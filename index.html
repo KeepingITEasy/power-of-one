@@ -107,6 +107,14 @@ svg text{fill:var(--text2);font-size:11px}
 #rosterPanel .row{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center}
 .rnote{font-size:12px;color:var(--text2)}
 .Former{background:var(--neutral-bg);color:var(--muted);text-decoration:line-through}
+.wts{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:13px;color:var(--text2);margin-bottom:10px}
+.wts label{display:flex;align-items:center;gap:6px}
+.wts input{width:58px;font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 6px}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.seg button{border-radius:0;background:transparent;color:var(--text);padding:6px 12px}
+.seg button.on{background:var(--brand);color:var(--brand-ink)}
+.rk{font-weight:700;font-variant-numeric:tabular-nums}
+tr.hl{background:var(--brand-soft)}
 .NoData{background:var(--brand-soft);color:var(--brand)}
 .ovgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
 .ov{min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;background:var(--bg)}
@@ -189,6 +197,18 @@ svg text{fill:var(--text2);font-size:11px}
     <div class="card" style="margin-top:14px">
       <h2 id="grpTitle">Average Total Score</h2>
       <div class="chart" id="grpChart"></div>
+    </div>
+    <div class="card" style="margin-top:14px" id="rankCard">
+      <h2>Weighted rankings <span class="muted" id="rankNote" style="font-weight:400"></span></h2>
+      <div class="wts">
+        <span class="seg" role="tablist"><button id="rkMembers" class="on">Members</button><button id="rkChapters">Chapters</button></span>
+        <label>Latest score <input id="wL" type="number" min="0" max="100" step="5" value="50">%</label>
+        <label>Average of all reports <input id="wA" type="number" min="0" max="100" step="5" value="30">%</label>
+        <label>Trend <input id="wT" type="number" min="0" max="100" step="5" value="20">%</label>
+        <button id="wReset" class="ghost">Reset</button>
+      </div>
+      <div class="tablewrap" style="max-height:520px"><table id="rankTbl"></table></div>
+      <p class="rnote" style="margin:8px 0 0">Weighted score = latest Power of One score, average of all loaded reports, and trend (points per month mapped to 0–100: flat = 50, +10/month = 100, −10/month = 0; under 3 months = 50). Only current members are ranked – within the region you pick, or across everything loaded. Chapters are ranked by their members' average. ▲▼ = places moved since the previous report.</p>
     </div>
     <div class="card" style="margin-top:14px">
       <h2>Chapters</h2>
@@ -340,7 +360,7 @@ function analyze(){
       h: ends.map(e => H[k]?.[e] ?? null) };
   }).sort((a,b) => a.r.localeCompare(b.r) || a.c.localeCompare(b.c) || (b.cur??-1)-(a.cur??-1));
   D = { reports, NR, ends, members, rows };
-  applyRosters();
+  applyRosters(); D.idx = null;
   startUI();
 }
 
@@ -401,7 +421,7 @@ $("rosterBtn").onclick = () => {
 };
 $("rosterCancel").onclick = () => { $("rosterPanel").style.display = "none"; };
 function reapply(msg){
-  const keep = selected?.key; applyRosters(); selected = D.members.find(m => m.key === keep) || null;
+  const keep = selected?.key; applyRosters(); D.idx = null; computeRanks(); selected = D.members.find(m => m.key === keep) || null;
   refreshMembers(); render(); chapterTable(); refreshRosterUI(); if (selected) detail(selected);
   $("rosterMsg").textContent = msg;
 }
@@ -414,6 +434,74 @@ $("rosterSave").onclick = () => {
   reapply(`Saved ${names.length} names.${ok ? "" : " (This browser blocked saving, so it will reset when you reload.)"}`);
 };
 $("rosterClear").onclick = () => { const ch = $("fChapter").value; delete ROSTERS[ch]; saveRosters(ROSTERS); $("rosterText").value = ""; reapply("Roster removed – everyone in the data counts again."); };
+
+const MAXROWS = 300;   // keep big (nationwide) files fast: tables draw at most this many rows
+const capNote = (n) => n > MAXROWS ? ` · showing the first ${MAXROWS} – use the filters to narrow` : "";
+/* ---------- weighted rank ---------- */
+const WKEY = "po1-weights-v1";
+function getW(){ const v = ["wL","wA","wT"].map(id => Math.max(0, +$(id).value || 0)); const t = v[0]+v[1]+v[2] || 1; return v.map(x => x/t); }
+try { const w = JSON.parse(localStorage.getItem(WKEY) || "null"); if (w) ["wL","wA","wT"].forEach((id,i) => $(id).value = w[i]); } catch(e){}
+const trendScore = sl => Math.max(0, Math.min(100, 50 + 5*(sl ?? 0)));
+function rankAt(u, W){
+  const rows = [];
+  for (const m of D.members){
+    if (m.former || m.stub || m.cur == null || (RSCOPE && m.r !== RSCOPE)) continue;
+    const v = m.m.slice(0, u+1).map(x => x ? x.total : null);
+    if (v[u] == null) continue;
+    const n = v.filter(x => x != null).length, sl = n >= 3 ? slope(v) : null;
+    const L = v[u], A = avg(v), T = trendScore(sl);
+    rows.push({ m, L, A, sl, T, W: W[0]*L + W[1]*A + W[2]*T });
+  }
+  const rk = (arr, f) => { const s = [...arr].sort((a,b) => f(b)-f(a)); s.forEach((r,i) => r._r = (i && Math.abs(f(s[i-1])-f(r))<1e-9) ? s[i-1]._r : i+1); return s; };
+  rk(rows, r => r.W).forEach(r => r.overall = r._r);
+  const byCh = {}; rows.forEach(r => (byCh[r.m.c] ??= []).push(r));
+  Object.values(byCh).forEach(g => rk(g, r => r.W).forEach(r => r.chRank = r._r));
+  const chs = Object.entries(byCh).map(([c, g]) => ({ c, r: g[0].m.r, n: g.length, W: avg(g.map(x=>x.W)), L: avg(g.map(x=>x.L)), A: avg(g.map(x=>x.A)), T: avg(g.map(x=>x.T)) }));
+  rk(chs, c => c.W).forEach(c => c.rank = c._r);
+  return { rows, chs };
+}
+let RK = null, rkView = "members", RSCOPE = "";
+const idxOf = m => (D.idx ??= new Map(D.members.map((x,i)=>[x,i]))).get(m);
+function computeRanks(){
+  RSCOPE = $("fRegion").value;
+  const W = getW(), N = D.NR, cur = rankAt(N-1, W);
+  if (N > 1){
+    const prev = rankAt(N-2, W), pm = new Map(prev.rows.map(r => [r.m, r.overall])), pc = new Map(prev.chs.map(c => [c.c, c.rank]));
+    cur.rows.forEach(r => { const p = pm.get(r.m); r.delta = p == null ? null : p - r.overall; });
+    cur.chs.forEach(c => { const p = pc.get(c.c); c.delta = p == null ? null : p - c.rank; });
+  }
+  cur.byMember = new Map(cur.rows.map(r => [r.m, r]));
+  RK = cur;
+}
+const fmtR = d => d == null ? '<span class="muted">new</span>' : d > 0 ? `<span class="up">▲ ${d}</span>` : d < 0 ? `<span class="dn">▼ ${-d}</span>` : '<span class="muted">–</span>';
+function rankTable(){
+  if (!RK) return;
+  const r = $("fRegion").value, c = $("fChapter").value, q = $("fSearch").value.trim().toLowerCase();
+  const f1 = v => v == null ? "—" : v.toFixed(1);
+  if (rkView === "members"){
+    const rows = RK.rows.filter(x => (!r||x.m.r===r) && (!c||x.m.c===c) && (!q||x.m.n.toLowerCase().includes(q))).sort((a,b)=>a.overall-b.overall);
+    $("rankNote").textContent = `· ${RK.rows.length} current members ranked ${RSCOPE ? "in "+RSCOPE : "across everything loaded"}${rows.length !== RK.rows.length ? ` · ${rows.length} match the filters` : ""}${capNote(rows.length)}`;
+    $("rankTbl").innerHTML = `<thead><tr><th class="n">Rank</th><th class="n">In chapter</th><th class="n">Move</th><th>Member / chapter</th><th class="n">Weighted</th><th class="n">Latest</th><th class="n">Average (all)</th><th class="n">Trend</th></tr></thead><tbody>` +
+      rows.slice(0, MAXROWS).map(x => `<tr data-i="${idxOf(x.m)}" class="${x.m===selected?"hl":""}" style="cursor:pointer"><td class="n rk">#${x.overall}</td><td class="n">#${x.chRank}</td><td class="n">${fmtR(x.delta)}</td>
+        <td><div>${esc(x.m.n)}</div><div class="muted" style="font-size:11px">${esc(x.m.c)}</div></td><td class="n"><b>${f1(x.W)}</b></td><td class="n">${x.L}</td><td class="n">${f1(x.A)}</td>
+        <td class="n">${x.sl == null ? '<span class="muted">—</span>' : (x.sl>0?"+":"")+x.sl.toFixed(1)+"/mo"}</td></tr>`).join("") + "</tbody>";
+  } else {
+    const rows = RK.chs.filter(x => !r || x.r === r).sort((a,b)=>a.rank-b.rank);
+    $("rankNote").textContent = `· ${RK.chs.length} chapters ranked ${RSCOPE ? "in "+RSCOPE : "across everything loaded"}${capNote(rows.length)}`;
+    $("rankTbl").innerHTML = `<thead><tr><th class="n">Rank</th><th class="n">Move</th><th>Chapter</th><th>Region</th><th class="n">Members</th><th class="n">Avg weighted</th><th class="n">Avg latest</th><th class="n">Avg (all reports)</th><th class="n">Avg trend score</th></tr></thead><tbody>` +
+      rows.slice(0, MAXROWS).map(x => `<tr data-c="${esc(x.c)}" class="${x.c===c?"hl":""}" style="cursor:pointer"><td class="n rk">#${x.rank}</td><td class="n">${fmtR(x.delta)}</td><td>${esc(x.c)}</td><td class="muted">${esc(x.r)}</td>
+        <td class="n">${x.n}</td><td class="n"><b>${f1(x.W)}</b></td><td class="n">${f1(x.L)}</td><td class="n">${f1(x.A)}</td><td class="n">${f1(x.T)}</td></tr>`).join("") + "</tbody>";
+  }
+}
+$("rankTbl").addEventListener("click", e => {
+  const tr = e.target.closest("tr"); if (!tr) return;
+  if (tr.dataset.i) selectMember(D.members[+tr.dataset.i]);
+  else if (tr.dataset.c){ $("fChapter").value = tr.dataset.c; $("fChapter").dispatchEvent(new Event("input")); }
+});
+$("rkMembers").onclick = () => { rkView = "members"; $("rkMembers").classList.add("on"); $("rkChapters").classList.remove("on"); rankTable(); };
+$("rkChapters").onclick = () => { rkView = "chapters"; $("rkChapters").classList.add("on"); $("rkMembers").classList.remove("on"); rankTable(); };
+["wL","wA","wT"].forEach(id => $(id).addEventListener("input", () => { try { localStorage.setItem(WKEY, JSON.stringify(["wL","wA","wT"].map(i => +$(i).value))); } catch(e){} computeRanks(); rankTable(); if (selected) detail(selected); }));
+$("wReset").onclick = () => { $("wL").value = 50; $("wA").value = 30; $("wT").value = 20; $("wL").dispatchEvent(new Event("input")); };
 
 /* ---------- UI ---------- */
 const fmtD = v => v==null ? '<span class="muted">—</span>' : v>0 ? `<span class="up">▲ ${v}</span>` : v<0 ? `<span class="dn">▼ ${-v}</span>` : '<span class="muted">0</span>';
@@ -472,7 +560,7 @@ function refreshMembers(){
 }
 function syncMember(){ const el = $("fMember"); if (el.disabled) return; const i = selected ? D.members.indexOf(selected) : -1; el.value = [...el.options].some(o=>o.value===String(i)) ? String(i) : ""; }
 $("fMember").addEventListener("input", e => { const v = e.target.value; if (v === ""){ selected = null; render(); $("detail").innerHTML = '<div class="empty">Select a member to see their trend.</div>'; } else selectMember(D.members[+v]); });
-["fRegion","fChapter","fStatus","fSearch"].forEach(id => $(id).addEventListener("input", () => { if(id==="fRegion") refreshChapters(); if(id==="fChapter"){ refreshMembers(); refreshRosterUI(); } $("dlChap").disabled = !$("fChapter").value; render(); }));
+["fRegion","fChapter","fStatus","fSearch"].forEach(id => $(id).addEventListener("input", () => { if(id==="fRegion"){ refreshChapters(); computeRanks(); } if(id==="fChapter"){ refreshMembers(); refreshRosterUI(); } $("dlChap").disabled = !$("fChapter").value; render(); }));
 
 function startUI(){
   $("app").style.display = "block";
@@ -480,7 +568,7 @@ function startUI(){
   $("sub").textContent = `${pLabel(R[0])} – ${pLabel(R[D.NR-1])} · ${D.NR} report${D.NR>1?"s":""} · latest covers ${MON[(R[D.NR-1]-6)%12]}–${pLabel(R[D.NR-1]-1)} · ${D.members.filter(m=>m.cur!=null && !m.former).length} active members`;
   opts($("fRegion"), "All regions", uniq(D.members.map(m=>m.r)));
   opts($("fStatus"), "Current members", ["Improving","Steady","Declining","New this month","New (≤2 months)","New – no data yet","Not in latest report","Former member"]);
-  refreshChapters(); refreshRosterUI(); selected = null;
+  computeRanks(); refreshChapters(); refreshRosterUI(); selected = null;
   $("detail").innerHTML = '<div class="empty">Select a member to see their trend.</div>';
   render(); chapterTable();
 }
@@ -504,11 +592,11 @@ function render(){
   const base = filtered(); base.forEach(m => m.v = view(m));
   const cols = columns(), sc = cols.find(c=>c[0]===sortKey) || cols.find(c=>c[0]==="cur"||c[0]==="tot");
   const list = base.sort((a,b)=>{ const x=sc[3](a), y=sc[3](b); if(x==null) return 1; if(y==null) return -1; return (x>y?1:x<y?-1:0)*sortDir; });
-  $("count").textContent = `(${list.length})`;
+  $("count").textContent = `(${list.length})${capNote(list.length)}`;
   $("tbl").querySelector("thead").innerHTML = "<tr>" + cols.map(([k,l,c])=>`<th data-k="${k}" class="${c||""}">${l}${k===sc[0]?(sortDir>0?" ▲":" ▼"):""}</th>`).join("") + "</tr>";
-  $("tbl").querySelector("tbody").innerHTML = list.map(m=>`<tr data-i="${D.members.indexOf(m)}" class="${m===selected?"sel":""}">` +
+  $("tbl").querySelector("tbody").innerHTML = list.slice(0, MAXROWS).map(m=>`<tr data-i="${idxOf(m)}" class="${m===selected?"sel":""}">` +
     cols.map(c=>`<td class="${c[2]||""}">${c[4](m)}</td>`).join("") + "</tr>").join("");
-  tiles(list); groupChart(list); overview(list);
+  tiles(list); groupChart(list); overview(list); rankTable();
 }
 function tiles(list){
   const N = D.NR, act = list.filter(m=>m.cur!=null);
@@ -593,6 +681,7 @@ function detail(m){
       <div class="tile"><div class="k">1-month change</div><div class="v" style="font-size:18px">${fmtD(m.d1)}</div></div>
       <div class="tile"><div class="k">Since first report</div><div class="v" style="font-size:18px">${fmtD(m.dA)}</div></div>
     </div>
+    ${(()=>{ const x = RK?.byMember.get(m); return x ? `<div class="rnote" style="margin:-4px 0 10px">Weighted rank <b style="color:var(--text)">#${x.overall}</b> of ${RK.rows.length} · <b style="color:var(--text)">#${x.chRank}</b> of ${RK.rows.filter(r=>r.m.c===m.c).length} in ${esc(m.c)} · weighted score ${x.W.toFixed(1)} ${x.delta?`(${fmtR(x.delta)} since last month)`:""}</div>` : ""; })()}
     <div class="muted" style="font-size:12px">${hasHist ? "Total score – 6-month rolling windows (longer history)" : "Total score by report"}</div>
     <div class="chart" id="mChart"></div>
     <div style="margin-top:10px;font-size:12px" class="muted">Category points (of 20) by report · focus area: <b style="color:var(--text)">${esc(m.f)}</b> · biggest gain: ${esc(m.gain)} · biggest drop: ${esc(m.drop)}</div>
@@ -620,7 +709,7 @@ function chapterTable(){
   const R = D.reports, f1 = v => v==null ? '<span class="muted">—</span>' : v.toFixed(1);
   const fd = v => v==null ? '<span class="muted">—</span>' : v>0 ? `<span class="up">▲ ${v.toFixed(1)}</span>` : v<0 ? `<span class="dn">▼ ${(-v).toFixed(1)}</span>` : "0";
   $("chapTbl").innerHTML = `<thead><tr><th>Chapter</th><th>Region</th>${R.map(p=>`<th class="n">${pShort(p)}</th>`).join("")}<th class="n">Members</th><th class="n">1-mo</th><th class="n">Since first</th></tr></thead><tbody>` +
-    chapterStats().map(c=>`<tr><td>${esc(c.chapter)}</td><td class="muted">${esc(c.region)}</td>${c.s.map(v=>`<td class="n">${f1(v)}</td>`).join("")}<td class="n">${c.n??"—"}</td><td class="n">${fd(c.d1)}</td><td class="n">${fd(c.dA)}</td></tr>`).join("") + "</tbody>";
+    chapterStats().slice(0, MAXROWS).map(c=>`<tr><td>${esc(c.chapter)}</td><td class="muted">${esc(c.region)}</td>${c.s.map(v=>`<td class="n">${f1(v)}</td>`).join("")}<td class="n">${c.n??"—"}</td><td class="n">${fd(c.d1)}</td><td class="n">${fd(c.dA)}</td></tr>`).join("") + "</tbody>";
 }
 window.addEventListener("resize", () => { if (!D) return; render(); if (selected) detail(selected); });
 
@@ -652,6 +741,16 @@ function download(list, name, includeAll){
     XLSX.utils.book_append_sheet(wb, sheet(top([...act].sort((a,b)=>a.dA-b.dA).slice(0,25)), {Chapter:32, Member:24, Region:28}), "Top Decliners");
     XLSX.utils.book_append_sheet(wb, sheet(D.rows.map(r => ({Report:pLabel(r.period), Region:r.region, Chapter:r.chapter, Name:r.name, Weeks:r.weeks, "Total Score":r.total,
       Attendance:r.raw[0], "Att Pts":r.pts[0], "Ref/Wk":r.raw[1], "Ref Pts":r.pts[1], "Visitor/Wk":r.raw[2], "Visitor Pts":r.pts[2], "121/Wk":r.raw[3], "121 Pts":r.pts[3], "CEU/Wk":r.raw[4], "CEU Pts":r.pts[4]})), {Chapter:32, Name:24, Region:28}), "All Data");
+  }
+  if (RK){
+    const inList = new Set(list), W = getW().map(x => Math.round(x*100)+"%").join(" / ");
+    const mr = RK.rows.filter(x => inList.has(x.m)).sort((a,b)=>a.overall-b.overall).map(x => ({"Overall Rank":x.overall, "Chapter Rank":x.chRank, "Rank Change vs Last Month":x.delta, Member:x.m.n, Chapter:x.m.c, Region:x.m.r,
+      "Weighted Score":Math.round(x.W*10)/10, "Latest":x.L, "Average":Math.round(x.A*10)/10, "Trend (pts/mo)":x.sl==null?null:Math.round(x.sl*10)/10, "Trend Score (0-100)":Math.round(x.T*10)/10, "Weights (latest/avg/trend)":W}));
+    if (mr.length) XLSX.utils.book_append_sheet(wb, sheet(mr, {Member:24, Chapter:32, Region:28, "Weights (latest/avg/trend)":24}), "Weighted Rank - Members");
+    const chs = new Set(list.map(m=>m.c));
+    const cr = RK.chs.filter(c => includeAll || chs.has(c.c)).sort((a,b)=>a.rank-b.rank).map(c => ({"Chapter Rank":c.rank, "Rank Change vs Last Month":c.delta, Chapter:c.c, Region:c.r, Members:c.n,
+      "Avg Weighted Score":Math.round(c.W*10)/10, "Avg Latest":Math.round(c.L*10)/10, "Avg of All Reports":Math.round(c.A*10)/10, "Avg Trend Score":Math.round(c.T*10)/10}));
+    if (cr.length) XLSX.utils.book_append_sheet(wb, sheet(cr, {Chapter:32, Region:28}), "Weighted Rank - Chapters");
   }
   const about = XLSX.utils.aoa_to_sheet([[APP.name],["Created by", APP.by],["Built by", APP.builder],["Version", APP.version],["Created", APP.created],["Report generated", new Date().toLocaleString()],["Reports included", D.reports.map(pLabel).join(", ")],["Web page", APP.url],[],["Free for any BNI chapter to use. Not an official BNI Global product. BNI® is a registered trademark of BNI Global, LLC."]]);
   about["!cols"] = [{wch:20},{wch:70}];
