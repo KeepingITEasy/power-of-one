@@ -9,37 +9,47 @@
 <style>
 :root{
   color-scheme: light;
-  --bg:#f4f4f2; --surface:#fcfcfb; --border:#e3e2de; --grid:#ecebe7;
-  --text:#0b0b0b; --text2:#52514e; --muted:#8a8984;
-  --series:#2a78d6; --series-soft:rgba(42,120,214,.12);
-  --good:#0f7a3d; --good-bg:#e3f4e8; --bad:#b42318; --bad-bg:#fde8e6; --neutral-bg:#efefec; --new-bg:#e6effa;
-  --btn:#1f4e79; --btn-text:#fff;
+    --bg:#f4f4f5; --surface:#ffffff; --border:#dfe0e2; --grid:#ececee;
+    --text:#1d1d1f; --text2:#54565a; --muted:#8b8d91;
+    --brand:#c8102e; --brand-ink:#ffffff; --brand-soft:#fbe7ea;
+    --series:#54565a; --series-soft:rgba(200,16,46,.07);
+    --good:#0f7a3d; --good-bg:#e3f4e8; --bad:#b42318; --bad-bg:#fde8e6; --neutral-bg:#efeff1; --new-bg:#ececee;
+    --btn:#c8102e; --btn-text:#fff;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     color-scheme: dark;
-    --bg:#121211; --surface:#1a1a19; --border:#2e2d2b; --grid:#262624;
-    --text:#f0efec; --text2:#c3c2b7; --muted:#8f8e86;
-    --series:#3987e5; --series-soft:rgba(57,135,229,.18);
-    --good:#5fd08a; --good-bg:#16301f; --bad:#ff8a80; --bad-bg:#3a1a17; --neutral-bg:#252523; --new-bg:#182638;
-    --btn:#3987e5; --btn-text:#0b0b0b;
+    --bg:#141415; --surface:#1d1d1f; --border:#333438; --grid:#2a2b2e;
+    --text:#f2f2f3; --text2:#c4c5c9; --muted:#8e9094;
+    --brand:#c8102e; --brand-ink:#ffffff; --brand-soft:#3a1519;
+    --series:#c4c5c9; --series-soft:rgba(232,72,90,.12);
+    --good:#5fd08a; --good-bg:#16301f; --bad:#ff8a80; --bad-bg:#3a1a17; --neutral-bg:#27282b; --new-bg:#2a2b2e;
+    --btn:#d42a3e; --btn-text:#fff;
   }
 }
 :root[data-theme="dark"]{
   color-scheme: dark;
-  --bg:#121211; --surface:#1a1a19; --border:#2e2d2b; --grid:#262624;
-  --text:#f0efec; --text2:#c3c2b7; --muted:#8f8e86;
-  --series:#3987e5; --series-soft:rgba(57,135,229,.18);
-  --good:#5fd08a; --good-bg:#16301f; --bad:#ff8a80; --bad-bg:#3a1a17; --neutral-bg:#252523; --new-bg:#182638;
-  --btn:#3987e5; --btn-text:#0b0b0b;
+    --bg:#141415; --surface:#1d1d1f; --border:#333438; --grid:#2a2b2e;
+    --text:#f2f2f3; --text2:#c4c5c9; --muted:#8e9094;
+    --brand:#c8102e; --brand-ink:#ffffff; --brand-soft:#3a1519;
+    --series:#c4c5c9; --series-soft:rgba(232,72,90,.12);
+    --good:#5fd08a; --good-bg:#16301f; --bad:#ff8a80; --bad-bg:#3a1a17; --neutral-bg:#27282b; --new-bg:#2a2b2e;
+    --btn:#d42a3e; --btn-text:#fff;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 .wrap{max-width:1280px;margin:0 auto;padding:20px 16px 48px}
-h1{font-size:22px;margin:0 0 2px}
+.brandbar{background:var(--brand);color:var(--brand-ink);border-bottom:4px solid #54565a}
+.brandin{max-width:1280px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:16px}
+.brandin img{height:44px;width:auto;background:#fff;border-radius:6px;padding:4px 8px}
+.eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.9;font-weight:600}
+h1{font-size:22px;margin:0}
+footer{max-width:1280px;margin:0 auto;padding:0 16px 32px;font-size:12px;color:var(--muted)}
+footer .rule{border-top:1px solid var(--border);padding-top:12px}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .sub{color:var(--text2);margin:0 0 18px}
 .drop{border:2px dashed var(--border);border-radius:14px;background:var(--surface);padding:28px 18px;text-align:center;margin-bottom:16px;transition:border-color .15s}
-.drop.over{border-color:var(--series)}
+.drop.over{border-color:var(--brand);background:var(--brand-soft)}
 .drop b{font-size:16px}
 .drop p{margin:6px 0;color:var(--text2)}
 button,.btn{font:inherit;border:0;border-radius:8px;padding:8px 14px;background:var(--btn);color:var(--btn-text);cursor:pointer}
@@ -59,15 +69,15 @@ button:disabled{opacity:.5;cursor:default}
 .grid2{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:14px}
 @media(max-width:900px){.grid2{grid-template-columns:1fr}}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;min-width:0}
-.card h2{font-size:15px;margin:0 0 8px}
+.card h2{font-size:15px;margin:0 0 8px;padding-left:8px;border-left:3px solid var(--brand)}
 .tablewrap{overflow:auto;max-height:640px}
 table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
 th,td{padding:6px 8px;border-bottom:1px solid var(--grid);text-align:left;white-space:nowrap}
-th{position:sticky;top:0;background:var(--surface);color:var(--text2);font-weight:600;font-size:12px;cursor:pointer;user-select:none}
+th{position:sticky;top:0;background:var(--surface);box-shadow:inset 0 -2px 0 var(--brand);color:var(--text2);font-weight:600;font-size:12px;cursor:pointer;user-select:none}
 td.n,th.n{text-align:right}
 #tbl tbody tr{cursor:pointer}
 #tbl tbody tr:hover{background:var(--series-soft)}
-#tbl tbody tr.sel{background:var(--series-soft);outline:1px solid var(--series)}
+#tbl tbody tr.sel{background:var(--brand-soft);outline:1px solid var(--brand)}
 .chip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px}
 .Improving{background:var(--good-bg);color:var(--good)}
 .Declining{background:var(--bad-bg);color:var(--bad)}
@@ -86,8 +96,8 @@ svg text{fill:var(--text2);font-size:11px}
 #app{display:none}
 .ovgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
 .ov{min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;background:var(--bg)}
-.ov:hover{border-color:var(--series)}
-.ov.on{border-color:var(--series);box-shadow:0 0 0 1px var(--series)}
+.ov:hover{border-color:var(--brand)}
+.ov.on{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand)}
 .ov .k{font-size:12px;color:var(--text2);font-weight:600}
 .ov .v{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
 .ov .v small{font-size:12px;font-weight:400;color:var(--muted)}
@@ -95,8 +105,13 @@ svg text{fill:var(--text2);font-size:11px}
 </style>
 </head>
 <body>
+<header class="brandbar">
+  <div class="brandin">
+    <img src="assets/logo.png" alt="BNI" onerror="this.remove()">
+    <div><div class="eyebrow">BNI · Power of One</div><h1>Member Trends</h1></div>
+  </div>
+</header>
 <div class="wrap">
-  <h1>Power of One – Member Trends</h1>
   <p class="sub">Drop in your monthly Power of One spreadsheets to see each member's trend. Files are read in your browser and never uploaded.</p>
 
   <div class="drop" id="drop">
@@ -158,6 +173,7 @@ svg text{fill:var(--text2);font-size:11px}
     </ul>
   </div>
 </div>
+<footer><div class="rule">Independent tool by Keeping IT Easy for BNI chapter leadership – not an official BNI product. BNI® is a registered trademark of BNI Global, LLC. Your files are processed in this browser and never uploaded.</div></footer>
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
@@ -313,7 +329,7 @@ function view(m){
   return { ys, cur, d1: cur!=null&&pv!=null ? cur-pv : null, dA: cur!=null&&fi>=0&&fi<N-1 ? cur-ys[fi] : null,
     raw: k>=0 && m.m[N-1] ? m.m[N-1].raw[k] : null };
 }
-const ptsChip = v => v==null ? '<span class="muted">—</span>' : `<span class="pts" style="background:rgba(57,135,229,${(0.08+v/20*0.42).toFixed(2)})">${v}</span>`;
+const ptsChip = v => v==null ? '<span class="muted">—</span>' : `<span class="pts" style="background:color-mix(in srgb, var(--series) ${Math.round(8+v/20*42)}%, transparent)">${v}</span>`;
 const normCols = cols => cols.map(c => c.length===4 && typeof c[2]==="function" ? [c[0],c[1],null,c[2],c[3]] : c);
 function columns(){ return normCols(buildCols()); }
 function buildCols(){
@@ -461,7 +477,7 @@ $("ovGrid").addEventListener("keydown", e => { if (e.key==="Enter" && e.target.c
 const winLabel = e => `${MON[(e-5)%12]}–${pShort(e)}`;
 function detail(m){
   const R = D.reports;
-  const ptsCell = v => v==null ? '<td class="n muted">—</td>' : `<td class="n"><span class="pts" style="background:rgba(57,135,229,${(0.08+v/20*0.42).toFixed(2)})">${v}</span></td>`;
+  const ptsCell = v => v==null ? '<td class="n muted">—</td>' : `<td class="n"><span class="pts" style="background:color-mix(in srgb, var(--series) ${Math.round(8+v/20*42)}%, transparent)">${v}</span></td>`;
   const rawFmt = (v,j) => v==null ? "—" : j===0 ? Math.round(v*100)+"%" : v.toFixed(2);
   const hasHist = m.h.some(v=>v!=null);
   $("detail").innerHTML = `
