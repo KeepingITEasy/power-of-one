@@ -1,0 +1,251 @@
+"""Build Power of One member trend reports from everything in Source Data.
+Run again after dropping a new month's file into Source Data."""
+import os, re, json, warnings
+import numpy as np, pandas as pd
+from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.formatting.rule import ColorScaleRule, CellIsRule
+from openpyxl.chart import LineChart, Reference
+from openpyxl.utils import get_column_letter
+warnings.filterwarnings("ignore")
+import sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from extract import load, BASE
+
+OUT = os.environ.get("POWER_OUT", os.path.join(BASE, "Reports"))  # set POWER_OUT to build elsewhere, then copy (avoids OneDrive locks)
+CATS = [("Attendance","Att Pts"),("Ref/Wk","Ref Pts"),("Visitor/Wk","Visitor Pts"),("121/Wk","121 Pts"),("CEU/Wk","CEU Pts")]
+CATNAME = {"Att Pts":"Attendance","Ref Pts":"Referrals","Visitor Pts":"Visitors","121 Pts":"1-to-1s","CEU Pts":"CEUs"}
+
+df, hist = load()
+reports = sorted(df.Report.unique()); latest, first = reports[-1], reports[0]
+prev = reports[-2]
+lab = {r: r.strftime("%b %Y") for r in reports}
+win = {r: f"{(r-6).strftime('%b')}–{(r-1).strftime('%b %Y')}" for r in reports}
+
+def slope(y):
+    y = np.array(y, float); x = np.arange(len(y)); m = ~np.isnan(y)
+    return round(np.polyfit(x[m], y[m], 1)[0], 6) if m.sum() >= 3 else np.nan
+
+# ---------------- member summary ----------------
+wide = df.pivot_table(index="Key", columns="Report", values="Total Score", aggfunc="first").reindex(columns=reports)
+info = df.sort_values("Report").groupby("Key").last()
+rows = []
+for k, s in wide.iterrows():
+    i = info.loc[k]; vals = s.values.astype(float); have = ~np.isnan(vals)
+    fi = int(np.argmax(have)); li = len(vals)-1-int(np.argmax(have[::-1]))
+    cur = vals[-1]; pv = vals[-2]
+    sl = slope(vals)
+    chg_all = vals[li] - vals[fi] if have.sum() > 1 else np.nan
+    if np.isnan(cur): status = "Not in latest report"
+    elif have.sum() == 1: status = "New this month"
+    elif have.sum() < 3: status = "New (≤2 months)"
+    elif sl >= 2 or chg_all >= 15: status = "Improving"
+    elif sl <= -2 or chg_all <= -15: status = "Declining"
+    else: status = "Steady"
+    last = df[(df.Key == k) & (df.Report == reports[li])].iloc[0]
+    firstrow = df[(df.Key == k) & (df.Report == reports[fi])].iloc[0]
+    pts = {c: last[c] for _, c in CATS}
+    focus = min(pts, key=lambda c: (pts[c], ["CEU Pts","Visitor Pts","Ref Pts","121 Pts","Att Pts"].index(c)))
+    deltas = {c: last[c]-firstrow[c] for _, c in CATS}
+    drop = min(deltas, key=deltas.get)
+    gain = max(deltas, key=deltas.get)
+    chist = df[df.Key == k].sort_values("Report").Chapter.drop_duplicates().tolist()
+    rows.append(dict(Key=k, Region=i.Region, Chapter=i.Chapter, Member=i.Name,
+        **{lab[r]: v for r, v in zip(reports, vals)},
+        **{"1-Mo Change": cur - pv if not (np.isnan(cur) or np.isnan(pv)) else np.nan,
+           "Change Since First": chg_all, "Trend (pts/mo)": round(sl, 1) if not np.isnan(sl) else np.nan,
+           "Months Reported": int(have.sum()), "Status": status,
+           "Weeks of Data (latest)": last.Weeks,
+           "Attendance %": last.Attendance, "Ref/Wk": last["Ref/Wk"], "Visitor/Wk": last["Visitor/Wk"],
+           "121/Wk": last["121/Wk"], "CEU/Wk": last["CEU/Wk"],
+           "Focus Area (lowest pts)": CATNAME[focus],
+           "Biggest Gain": CATNAME[gain] + f" (+{deltas[gain]:.0f})" if deltas[gain] > 0 else "—",
+           "Chapter Moves": " → ".join(chist) if len(chist) > 1 else "",
+           "Biggest Drop": CATNAME[drop] + f" ({deltas[drop]:.0f})" if deltas[drop] < 0 else "—"}))
+summ = pd.DataFrame(rows)
+summ = summ[[c for c in summ.columns if c != "Chapter Moves"] + ["Chapter Moves"]].sort_values(["Region","Chapter",lab[latest]], ascending=[True,True,False])
+
+# ---------------- metric trends (long → wide per metric) ----------------
+metric_wide = {}
+for raw, pts in [("Total Score",None)] + CATS:
+    w = df.pivot_table(index="Key", columns="Report", values=raw, aggfunc="first").reindex(columns=reports)
+    w.columns = [lab[c] for c in w.columns]
+    w = info[["Region","Chapter","Name"]].join(w).reset_index(drop=True).rename(columns={"Name":"Member"})
+    metric_wide[raw] = w.sort_values(["Region","Chapter","Member"])
+
+# ---------------- score history (11 windows) ----------------
+ends = sorted(hist.WindowEnd.unique())
+hw = hist.pivot_table(index="Key", columns="WindowEnd", values="Score", aggfunc="first").reindex(columns=ends)
+hw.columns = [f"{(e-5).strftime('%b')}–{e.strftime('%b %y')}" for e in ends]
+hinfo = hist.sort_values("WindowEnd").groupby("Key")[["Region","Chapter","Name"]].last()
+hinfo.update(info[["Region","Chapter","Name"]])
+hw = hinfo.join(hw).reset_index(drop=True).rename(columns={"Name":"Member"}).sort_values(["Region","Chapter","Member"])
+
+# ---------------- chapter & region trends ----------------
+def grp(by):
+    g = df.groupby(by + ["Report"]).agg(Members=("Name","size"), AvgScore=("Total Score","mean"),
+        Attendance=("Attendance","mean"), Ref=("Ref/Wk","mean"), Vis=("Visitor/Wk","mean"),
+        OneToOne=("121/Wk","mean"), CEU=("CEU/Wk","mean"),
+        At70=("Total Score", lambda s: (s >= 70).mean())).reset_index()
+    return g
+chap = grp(["Region","Chapter"]); reg = grp(["Region"])
+chap_w = chap.pivot_table(index=["Region","Chapter"], columns="Report", values="AvgScore").reindex(columns=reports)
+chap_w.columns = [lab[c] for c in chap_w.columns]
+chap_m = chap.pivot_table(index=["Region","Chapter"], columns="Report", values="Members").reindex(columns=reports)
+chap_w["Members (latest)"] = chap_m[latest].values
+chap_w["1-Mo Change"] = chap_w[lab[latest]] - chap_w[lab[prev]]
+chap_w["Change Since First"] = chap_w[lab[latest]] - chap_w[lab[first]]
+chap_w = chap_w.reset_index().sort_values(lab[latest], ascending=False)
+reg_w = reg.pivot_table(index="Region", columns="Report", values="AvgScore").reindex(columns=reports)
+reg_w.columns = [lab[c] for c in reg_w.columns]
+reg_w["Change Since First"] = reg_w[lab[latest]] - reg_w[lab[first]]
+reg_w = reg_w.reset_index()
+overall = df.groupby("Report").agg(Members=("Name","size"), AvgScore=("Total Score","mean"),
+    Attendance=("Attendance","mean"), Ref=("Ref/Wk","mean"), Vis=("Visitor/Wk","mean"),
+    OneToOne=("121/Wk","mean"), CEU=("CEU/Wk","mean"),
+    At70=("Total Score", lambda s: (s >= 70).mean()), Under30=("Total Score", lambda s: (s < 30).mean()))
+overall.index = [lab[r] for r in overall.index]
+
+# ---------------- workbook ----------------
+fname = f"Power of One Member Trends {first.strftime('%Y-%m')} to {latest.strftime('%Y-%m')}.xlsx"
+path = os.path.join(OUT, fname)
+active = summ[summ.Status != "Not in latest report"]
+movers_up = active[active.Status.ne("New this month")].nlargest(25, "Change Since First")
+movers_dn = active[active.Status.ne("New this month")].nsmallest(25, "Change Since First")
+readme = pd.DataFrame({"Power of One – Member Trend Analysis": [
+    f"Reports included: {', '.join(lab[r] for r in reports)} (each report covers the 6 months of PALMS data before it; e.g. {lab[latest]} = {win[latest]}).",
+    f"Members in latest report: {len(active)} across {df[df.Report==latest].Chapter.nunique()} chapters.",
+    "Score scale: 5 categories × 20 pts (Attendance, Referrals, Visitors, 1-to-1s, CEUs) = 100 max.",
+    "Status rules: Improving = trend ≥ +2 pts/mo or ≥ +15 since first report; Declining = trend ≤ −2 pts/mo or ≤ −15; otherwise Steady. Needs 3+ months.",
+    "Focus Area = category with the lowest points in the member's most recent report (where coaching helps most).",
+    "Biggest Gain / Drop = category points change from the member's first to most recent report.",
+    "Score History (11 mo) comes from the 'Monthly' tab of each source file – a longer look-back for Total Score only.",
+    "Members are matched by name across chapters (chapter moves are listed in 'Chapter Moves'); a name-spelling change will show as two rows. Chapter shown = most recent chapter.",
+    "Sheets: Overview · Member Summary · Score History · one tab per metric · Chapter Trends · Region Trends · Top Movers · All Data.",
+    "To refresh: drop the new month's file in 'Source Data' (name starting YYYY-MM) and run Scripts/build_reports.py.",
+]})
+with pd.ExcelWriter(path, engine="openpyxl") as xw:
+    readme.to_excel(xw, sheet_name="Read Me", index=False)
+    ov = overall.T; ov.index = ["Members","Avg Total Score","Avg Attendance %","Avg Referrals/Wk","Avg Visitors/Wk","Avg 1-to-1s/Wk","Avg CEUs/Wk","% Scoring 70+","% Scoring Under 30"]
+    ov.to_excel(xw, sheet_name="Overview")
+    pd.DataFrame(active.Status.value_counts()).rename(columns={"count":"Members"}).to_excel(xw, sheet_name="Overview", startrow=13)
+    summ.drop(columns="Key").to_excel(xw, sheet_name="Member Summary", index=False)
+    hw.to_excel(xw, sheet_name="Score History (11 mo)", index=False)
+    for raw, nm in [("Total Score","Total Score"),("Attendance","Attendance %"),("Ref/Wk","Referrals per Wk"),("Visitor/Wk","Visitors per Wk"),("121/Wk","1-to-1s per Wk"),("CEU/Wk","CEUs per Wk")]:
+        metric_wide[raw].to_excel(xw, sheet_name=nm, index=False)
+    chap_w.to_excel(xw, sheet_name="Chapter Trends", index=False)
+    reg_w.to_excel(xw, sheet_name="Region Trends", index=False)
+    movers_up[["Region","Chapter","Member",lab[first],lab[latest],"Change Since First","Biggest Gain"]].to_excel(xw, sheet_name="Top Movers", index=False, startrow=1)
+    movers_dn[["Region","Chapter","Member",lab[first],lab[latest],"Change Since First","Biggest Drop"]].to_excel(xw, sheet_name="Top Movers", index=False, startrow=1, startcol=8)
+    ad = df.copy(); ad["Report"] = ad.Report.astype(str)
+    ad[["Report","Region","Chapter","Name","Weeks","Total Score"] + [c for p in CATS for c in p]].to_excel(xw, sheet_name="All Data", index=False)
+
+HDR = PatternFill("solid", fgColor="1F4E79"); WHITE = Font(bold=True, color="FFFFFF")
+def style(ws, pct_cols=(), dec_cols=(), score_cols=(), chg_cols=(), widths=None, freeze="D2"):
+    for c in ws[1]:
+        c.fill, c.font = HDR, WHITE; c.alignment = Alignment(wrap_text=True, vertical="center")
+    ws.row_dimensions[1].height = 32
+    if freeze: ws.freeze_panes = freeze
+    ws.auto_filter.ref = ws.dimensions
+    hdr = {c.value: c.column_letter for c in ws[1]}
+    n = ws.max_row
+    for h, L in hdr.items():
+        w = 34 if h in ("Chapter",) else 22 if h in ("Member","Region","Status","Focus Area (lowest pts)","Biggest Gain","Biggest Drop") else 11
+        ws.column_dimensions[L].width = (widths or {}).get(h, w)
+        fmt = "0%" if h in pct_cols else "0.00" if h in dec_cols else "0.0" if h in chg_cols or h in score_cols else None
+        if fmt:
+            for r in range(2, n+1): ws[f"{L}{r}"].number_format = fmt
+    for h in score_cols:
+        if h in hdr: ws.conditional_formatting.add(f"{hdr[h]}2:{hdr[h]}{n}", ColorScaleRule(start_type="num", start_value=0, start_color="F8696B", mid_type="num", mid_value=50, mid_color="FFEB84", end_type="num", end_value=100, end_color="63BE7B"))
+    for h in chg_cols:
+        if h in hdr:
+            rng = f"{hdr[h]}2:{hdr[h]}{n}"
+            ws.conditional_formatting.add(rng, CellIsRule(operator="greaterThan", formula=["0"], font=Font(color="006100", bold=True)))
+            ws.conditional_formatting.add(rng, CellIsRule(operator="lessThan", formula=["0"], font=Font(color="9C0006", bold=True)))
+    return hdr
+
+wb = load_workbook(path)
+mlabs = [lab[r] for r in reports]
+ws = wb["Read Me"]; ws.column_dimensions["A"].width = 140; ws["A1"].font = Font(bold=True, size=14)
+ws = wb["Overview"]; ws.column_dimensions["A"].width = 24
+for c in ws[1]: c.fill, c.font = HDR, WHITE
+for col in range(2, len(reports)+2):
+    for r, f in [(4,"0%"),(5,"0.00"),(6,"0.00"),(7,"0.00"),(8,"0.00"),(9,"0%"),(10,"0%"),(3,"0.0")]:
+        ws.cell(r, col).number_format = f
+ws.cell(14,1).value = "Trend status (latest members)"; ws.cell(14,1).font = Font(bold=True)
+ch = LineChart(); ch.title = "Average Total Score"; ch.height, ch.width = 7, 16; ch.legend = None
+ch.add_data(Reference(ws, min_col=2, max_col=len(reports)+1, min_row=3), from_rows=True, titles_from_data=False)
+ch.set_categories(Reference(ws, min_col=2, max_col=len(reports)+1, min_row=1)); ws.add_chart(ch, "J2")
+ws = wb["Member Summary"]
+hdr = style(ws, pct_cols=["Attendance %"], dec_cols=["Ref/Wk","Visitor/Wk","121/Wk","CEU/Wk"], score_cols=mlabs, chg_cols=["1-Mo Change","Change Since First","Trend (pts/mo)"])
+for r in range(2, ws.max_row+1):
+    c = ws[f"{hdr['Status']}{r}"]
+    c.fill = PatternFill("solid", fgColor={"Improving":"C6EFCE","Declining":"FFC7CE","Steady":"F2F2F2"}.get(c.value, "DDEBF7"))
+ws = wb["Score History (11 mo)"]; style(ws, score_cols=list(hw.columns[3:]))
+for nm, kind in [("Total Score","s"),("Attendance %","p"),("Referrals per Wk","d"),("Visitors per Wk","d"),("1-to-1s per Wk","d"),("CEUs per Wk","d")]:
+    ws = wb[nm]
+    hdr = style(ws, pct_cols=mlabs if kind=="p" else (), dec_cols=mlabs if kind=="d" else (), score_cols=mlabs if kind=="s" else ())
+    if kind != "s":
+        for h in mlabs:
+            ws.conditional_formatting.add(f"{hdr[h]}2:{hdr[h]}{ws.max_row}", ColorScaleRule(start_type="min", start_color="FFFFFF", end_type="percentile", end_value=95, end_color="5B9BD5"))
+ws = wb["Chapter Trends"]; style(ws, score_cols=mlabs, chg_cols=["1-Mo Change","Change Since First"], freeze="C2")
+ws = wb["Region Trends"]; style(ws, score_cols=mlabs, chg_cols=["Change Since First"], freeze="B2")
+ch = LineChart(); ch.title = "Region Average Score"; ch.height, ch.width = 9, 20
+for r in range(2, ws.max_row+1):
+    ch.add_data(Reference(ws, min_col=1, max_col=len(reports)+1, min_row=r), from_rows=True, titles_from_data=True)
+ch.set_categories(Reference(ws, min_col=2, max_col=len(reports)+1, min_row=1)); ws.add_chart(ch, "A10")
+ws = wb["Top Movers"]
+ws["A1"], ws["I1"] = f"Top 25 Improvers ({lab[first]} → {lab[latest]})", "Top 25 Decliners"
+ws["A1"].font = ws["I1"].font = Font(bold=True, size=12)
+for c in ws[2]:
+    if c.value: c.fill, c.font = HDR, WHITE
+for L, w in zip("ABCDEFGHIJKLMNO", [22,30,22,9,9,10,18,3,22,30,22,9,9,10,18]): ws.column_dimensions[L].width = w
+ws = wb["All Data"]; style(ws, freeze="E2")
+wb.save(path)
+
+# ---------------- per-chapter workbooks ----------------
+cd = os.path.join(OUT, "Chapters"); os.makedirs(cd, exist_ok=True)
+for chn, g in summ[summ.Status != "Not in latest report"].groupby("Chapter"):
+    p = os.path.join(cd, re.sub(r'[\\/:*?"<>|]', "-", chn) + ".xlsx")
+    cols = ["Member"] + mlabs + ["Chapter Moves","1-Mo Change","Change Since First","Trend (pts/mo)","Status","Attendance %","Ref/Wk","Visitor/Wk","121/Wk","CEU/Wk","Focus Area (lowest pts)","Biggest Gain","Biggest Drop"]
+    cr = chap[chap.Chapter == chn].copy(); cr["Report"] = cr.Report.map(lab)
+    cr = cr.rename(columns={"AvgScore":"Avg Score","Ref":"Ref/Wk","Vis":"Visitor/Wk","OneToOne":"121/Wk","CEU":"CEU/Wk","At70":"% at 70+"}).drop(columns=["Region","Chapter"])
+    with pd.ExcelWriter(p, engine="openpyxl") as xw:
+        g.sort_values(lab[latest], ascending=False)[cols].to_excel(xw, sheet_name="Members", index=False)
+        cr.to_excel(xw, sheet_name="Chapter Trend", index=False)
+        left = summ[(summ.Chapter == chn) & (summ.Status == "Not in latest report")]
+        if len(left): left[["Member"] + mlabs].to_excel(xw, sheet_name="No Longer Reported", index=False)
+    wb2 = load_workbook(p); ws = wb2["Members"]
+    hdr = style(ws, pct_cols=["Attendance %"], dec_cols=["Ref/Wk","Visitor/Wk","121/Wk","CEU/Wk"], score_cols=mlabs, chg_cols=["1-Mo Change","Change Since First","Trend (pts/mo)"], freeze="B2")
+    for r in range(2, ws.max_row+1):
+        c = ws[f"{hdr['Status']}{r}"]; c.fill = PatternFill("solid", fgColor={"Improving":"C6EFCE","Declining":"FFC7CE","Steady":"F2F2F2"}.get(c.value, "DDEBF7"))
+    ws = wb2["Chapter Trend"]; style(ws, pct_cols=["Attendance","% at 70+"], dec_cols=["Ref/Wk","Visitor/Wk","121/Wk","CEU/Wk"], chg_cols=["Avg Score"], freeze="B2")
+    ch = LineChart(); ch.title = f"{chn} – Average Score"; ch.legend = None; ch.height, ch.width = 7, 16
+    ch.add_data(Reference(ws, min_col=3, min_row=2, max_row=ws.max_row)); ch.set_categories(Reference(ws, min_col=1, min_row=2, max_row=ws.max_row))
+    ws.add_chart(ch, "A12")
+    if "No Longer Reported" in wb2.sheetnames: style(wb2["No Longer Reported"], score_cols=mlabs, freeze="B2")
+    wb2.save(p)
+
+# ---------------- dashboard data ----------------
+H = hist.copy()
+members = []
+for k, g in df.sort_values("Report").groupby("Key"):
+    s = summ[summ.Key == k].iloc[0]
+    hh = H[H.Key == k].set_index("WindowEnd")["Score"]
+    members.append(dict(n=s.Member, c=s.Chapter, r=s.Region, st=s.Status,
+        cur=None if pd.isna(s[lab[latest]]) else float(s[lab[latest]]),
+        d1=None if pd.isna(s["1-Mo Change"]) else float(s["1-Mo Change"]),
+        dA=None if pd.isna(s["Change Since First"]) else float(s["Change Since First"]),
+        f=s["Focus Area (lowest pts)"], mv=s["Chapter Moves"],
+        m=[None if (g.Report == r).sum() == 0 else (lambda x: [float(x["Total Score"])] + [round(float(x[a]),3) for a,_ in CATS] + [float(x[p]) for _,p in CATS] + [float(x.Weeks)])(g[g.Report == r].iloc[0]) for r in reports],
+        h=[None if e not in hh.index else float(hh[e]) for e in ends]))
+data = dict(reports=[lab[r] for r in reports], windows=[win[r] for r in reports],
+    hist=[f"{(e-5).strftime('%b')}–{e.strftime('%b %y')}" for e in ends], members=members,
+    overall={k: [float(v) for v in overall[k]] for k in overall.columns})
+with open(os.path.join(BASE, "Scripts", "dashboard_template.html")) as f: tpl = f.read()
+with open(os.path.join(OUT, "Power of One Dashboard.html"), "w") as f:
+    f.write(tpl.replace("/*__DATA__*/null", json.dumps(data, separators=(",",":"))))
+
+print("Wrote", path)
+print(active.Status.value_counts().to_string())
+print(overall.round(2).to_string())
+print(chap_w.head(5).to_string()); print(chap_w.tail(5).to_string())

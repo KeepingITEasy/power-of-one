@@ -1,0 +1,15 @@
+Power of One – monthly refresh
+
+1. Save the new month's Power of One file into "Source Data", named starting with YYYY-MM
+   (e.g. "2026-11 Power of One - Illinois Central & Northern.xlsx").
+2. In Terminal, from this folder's parent:
+      python3 -m pip install openpyxl pandas      (one time)
+      python3 Scripts/build_reports.py
+   (If python3 complains about the Xcode license, run: sudo xcodebuild -license accept)
+   If OneDrive times out while saving, build elsewhere and copy in:
+      POWER_OUT=~/Desktop/po-out python3 Scripts/build_reports.py
+3. Outputs land in "Reports": the master trend workbook, one workbook per chapter in
+   "Reports/Chapters", and "Power of One Dashboard.html" (open in any browser).
+
+Files: extract.py (reads Source Data), build_reports.py (builds reports),
+dashboard_template.html (dashboard layout; data is injected at build time).

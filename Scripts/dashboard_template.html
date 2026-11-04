@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Power of One Trends</title>
+<style>
+:root{
+  color-scheme: light;
+  --bg:#f4f4f2; --surface:#fcfcfb; --border:#e3e2de; --grid:#ecebe7;
+  --text:#0b0b0b; --text2:#52514e; --muted:#8a8984;
+  --series:#2a78d6; --series-soft:rgba(42,120,214,.12);
+  --good:#0f7a3d; --good-bg:#e3f4e8; --bad:#b42318; --bad-bg:#fde8e6; --neutral-bg:#efefec; --new-bg:#e6effa;
+  --accent:#1f4e79;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#121211; --surface:#1a1a19; --border:#2e2d2b; --grid:#262624;
+    --text:#f0efec; --text2:#c3c2b7; --muted:#8f8e86;
+    --series:#3987e5; --series-soft:rgba(57,135,229,.18);
+    --good:#5fd08a; --good-bg:#16301f; --bad:#ff8a80; --bad-bg:#3a1a17; --neutral-bg:#252523; --new-bg:#182638;
+    --accent:#8db8e8;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#121211; --surface:#1a1a19; --border:#2e2d2b; --grid:#262624;
+  --text:#f0efec; --text2:#c3c2b7; --muted:#8f8e86;
+  --series:#3987e5; --series-soft:rgba(57,135,229,.18);
+  --good:#5fd08a; --good-bg:#16301f; --bad:#ff8a80; --bad-bg:#3a1a17; --neutral-bg:#252523; --new-bg:#182638;
+  --accent:#8db8e8;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:22px;margin:0 0 2px}
+.sub{color:var(--text2);margin:0 0 18px}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.filters select,.filters input{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 10px;min-width:0}
+.filters input{flex:1 1 220px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
+.tile .k{color:var(--text2);font-size:12px}
+.tile .v{font-size:24px;font-weight:650;font-variant-numeric:tabular-nums}
+.tile .d{font-size:12px;color:var(--text2)}
+.grid2{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:14px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;min-width:0}
+.card h2{font-size:15px;margin:0 0 8px}
+.tablewrap{overflow:auto;max-height:640px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:6px 8px;border-bottom:1px solid var(--grid);text-align:left;white-space:nowrap}
+th{position:sticky;top:0;background:var(--surface);color:var(--text2);font-weight:600;font-size:12px;cursor:pointer;user-select:none}
+td.n,th.n{text-align:right}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:var(--series-soft)}
+tbody tr.sel{background:var(--series-soft);outline:1px solid var(--series)}
+.chip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px}
+.Improving{background:var(--good-bg);color:var(--good)}
+.Declining{background:var(--bad-bg);color:var(--bad)}
+.Steady{background:var(--neutral-bg);color:var(--text2)}
+.New,.Gone{background:var(--new-bg);color:var(--text2)}
+.up{color:var(--good)} .dn{color:var(--bad)}
+.muted{color:var(--muted)}
+svg text{fill:var(--text2);font-size:11px}
+.chart{position:relative}
+td .muted{white-space:nowrap}
+.tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px 9px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.12);display:none;white-space:nowrap;color:var(--text)}
+.cat td:first-child{color:var(--text2)}
+.pts{display:inline-block;min-width:28px;text-align:center;border-radius:4px;padding:0 4px}
+.legend{font-size:12px;color:var(--text2);margin-top:6px}
+.empty{color:var(--muted);padding:30px 0;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Power of One – Member Trends</h1>
+  <p class="sub" id="sub"></p>
+  <div class="filters">
+    <select id="fRegion" aria-label="Region"></select>
+    <select id="fChapter" aria-label="Chapter"></select>
+    <select id="fStatus" aria-label="Status"></select>
+    <input id="fSearch" type="search" placeholder="Search member…" aria-label="Search member">
+  </div>
+  <div class="tiles" id="tiles"></div>
+  <div class="grid2">
+    <div class="card">
+      <h2>Members <span class="muted" id="count"></span></h2>
+      <div class="tablewrap"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card" id="detail"><div class="empty">Select a member to see their trend.</div></div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h2 id="grpTitle">Average Total Score – current selection</h2>
+    <div class="chart" id="grpChart"></div>
+  </div>
+</div>
+<script>
+const D = /*__DATA__*/null;
+const R = D.reports, NR = R.length;
+const CAT = ["Attendance","Referrals","Visitors","1-to-1s","CEUs"];
+const RAW = ["Attendance %","Ref/Wk","Visitors/Wk","1-to-1s/Wk","CEU/Wk"];
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmtD = v => v==null ? '<span class="muted">—</span>' : v>0 ? `<span class="up">▲ ${v}</span>` : v<0 ? `<span class="dn">▼ ${-v}</span>` : '<span class="muted">0</span>';
+const chipCls = s => s.startsWith("New") ? "New" : s.startsWith("Not") ? "Gone" : s;
+
+$("sub").textContent = `${R[0]} – ${R[NR-1]} reports · latest covers ${D.windows[NR-1]} · ${D.members.filter(m=>m.cur!=null).length} active members`;
+
+function opts(el, label, vals){ el.innerHTML = `<option value="">${label}</option>` + vals.map(v=>`<option>${esc(v)}</option>`).join(""); }
+const uniq = a => [...new Set(a)].sort();
+opts($("fRegion"), "All regions", uniq(D.members.map(m=>m.r)));
+opts($("fStatus"), "All statuses", ["Improving","Steady","Declining","New this month","New (≤2 months)","Not in latest report"]);
+function refreshChapters(){
+  const r = $("fRegion").value, cur = $("fChapter").value;
+  opts($("fChapter"), "All chapters", uniq(D.members.filter(m=>!r||m.r===r).map(m=>m.c)));
+  if ([...$("fChapter").options].some(o=>o.value===cur)) $("fChapter").value = cur;
+}
+refreshChapters();
+
+let sortKey = "cur", sortDir = -1, selected = null;
+const COLS = [["n","Member / chapter"],["spark","Trend"],["cur","Score","n"],["d1","1-mo","n"],["dA","Since first","n"],["st","Status"],["f","Focus area"]];
+$("tbl").querySelector("thead").innerHTML = "<tr>" + COLS.map(([k,l,c])=>`<th data-k="${k}" class="${c||""}">${l}</th>`).join("") + "</tr>";
+$("tbl").querySelector("thead").onclick = e => { const k = e.target.dataset.k; if(!k||k==="spark") return; sortDir = sortKey===k ? -sortDir : (k==="n"||k==="c"?1:-1); sortKey = k; render(); };
+
+function filtered(){
+  const r=$("fRegion").value, c=$("fChapter").value, s=$("fStatus").value, q=$("fSearch").value.trim().toLowerCase();
+  return D.members.filter(m => (!r||m.r===r) && (!c||m.c===c) && (!s||m.st===s) && (!q||m.n.toLowerCase().includes(q)));
+}
+function spark(m){
+  const w=90,h=24,p=3, ys=m.m.map(x=>x?x[0]:null);
+  const pts = ys.map((y,i)=>y==null?null:[p+i*(w-2*p)/(NR-1), h-p-(y/100)*(h-2*p)]);
+  let d="", on=false; pts.forEach(q=>{ if(!q){on=false;return;} d+=(on?"L":"M")+q[0].toFixed(1)+" "+q[1].toFixed(1); on=true; });
+  const last = pts.filter(Boolean).pop();
+  return `<svg width="${w}" height="${h}" aria-hidden="true"><path d="${d}" fill="none" stroke="var(--series)" stroke-width="1.6"/>${last?`<circle cx="${last[0]}" cy="${last[1]}" r="2.5" fill="var(--series)"/>`:""}</svg>`;
+}
+function render(){
+  const list = filtered().sort((a,b)=>{ const x=a[sortKey], y=b[sortKey];
+    if(x==null) return 1; if(y==null) return -1; return (x>y?1:x<y?-1:0)*sortDir; });
+  $("count").textContent = `(${list.length})`;
+  $("tbl").querySelector("tbody").innerHTML = list.map((m,i)=>`<tr data-i="${D.members.indexOf(m)}" class="${m===selected?"sel":""}">
+    <td><div>${esc(m.n)}</div><div class="muted" style="font-size:11px">${esc(m.c)}</div></td><td>${spark(m)}</td>
+    <td class="n"><b>${m.cur??"—"}</b></td><td class="n">${fmtD(m.d1)}</td><td class="n">${fmtD(m.dA)}</td>
+    <td><span class="chip ${chipCls(m.st)}">${esc(m.st)}</span></td><td>${esc(m.f)}</td></tr>`).join("");
+  tiles(list); groupChart(list);
+}
+$("tbl").querySelector("tbody").onclick = e => { const tr=e.target.closest("tr"); if(!tr) return; selected = D.members[+tr.dataset.i]; render(); detail(selected); };
+["fRegion","fChapter","fStatus","fSearch"].forEach(id=>$(id).addEventListener("input", ()=>{ if(id==="fRegion") refreshChapters(); render(); }));
+
+function avg(a){ a=a.filter(v=>v!=null); return a.length? a.reduce((s,v)=>s+v,0)/a.length : null; }
+function tiles(list){
+  const act = list.filter(m=>m.cur!=null);
+  const a = avg(act.map(m=>m.cur)), pa = avg(list.map(m=>m.m[NR-2]?m.m[NR-2][0]:null)), fa = avg(list.map(m=>m.m[0]?m.m[0][0]:null));
+  const cnt = s => act.filter(m=>m.st===s).length;
+  const d = (x,y) => x==null||y==null ? "" : (x-y>=0?"▲ ":"▼ ")+Math.abs(x-y).toFixed(1);
+  $("tiles").innerHTML = [
+    ["Active members", act.length, ""],
+    ["Avg score (latest)", a==null?"—":a.toFixed(1), `${d(a,pa)} vs last month · ${d(a,fa)} vs ${R[0]}`],
+    ["Improving", cnt("Improving"), "trend ≥ +2 pts/mo"],
+    ["Steady", cnt("Steady"), ""],
+    ["Declining", cnt("Declining"), "trend ≤ −2 pts/mo"],
+    ["Scoring 70+", act.filter(m=>m.cur>=70).length, act.length? Math.round(100*act.filter(m=>m.cur>=70).length/act.length)+"% of active":""],
+  ].map(([k,v,dd])=>`<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${dd}</div></div>`).join("");
+}
+
+// single-series line chart with crosshair tooltip
+function lineChart(el, labels, ys, opts={}){
+  const W = Math.max(300, el.clientWidth||600), H = opts.h||220, L=34, Rp=12, T=12, B=28;
+  const x = i => L + i*(W-L-Rp)/Math.max(1,labels.length-1), y = v => T + (1-v/100)*(H-T-B);
+  let g = "";
+  [0,25,50,75,100].forEach(v=>{ g += `<line x1="${L}" x2="${W-Rp}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${L-6}" y="${y(v)+4}" text-anchor="end">${v}</text>`; });
+  const step = Math.ceil(labels.length/ (W<500?4:8));
+  labels.forEach((l,i)=>{ const last=labels.length-1; if(i===last||(i%step===0&&last-i>=step*0.75)) g += `<text x="${x(i)}" y="${H-8}" text-anchor="middle">${esc(l)}</text>`; });
+  let d="", on=false; ys.forEach((v,i)=>{ if(v==null){on=false;return;} d += (on?"L":"M")+x(i).toFixed(1)+" "+y(v).toFixed(1); on=true; });
+  const dots = ys.map((v,i)=>v==null?"":`<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="var(--series)" stroke="var(--surface)" stroke-width="2"/>`).join("");
+  const lastI = ys.map((v,i)=>v==null?-1:i).filter(i=>i>=0).pop();
+  const lbl = lastI!=null&&lastI>=0 ? `<text x="${x(lastI)}" y="${y(ys[lastI])-10}" text-anchor="middle" style="fill:var(--text);font-weight:600">${(+ys[lastI]).toFixed(opts.dec??0)}</text>` : "";
+  el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="${esc(opts.aria||"Score trend")}">${g}<path d="${d}" fill="none" stroke="var(--series)" stroke-width="2" stroke-linejoin="round"/>${dots}${lbl}<line class="xh" y1="${T}" y2="${H-B}" stroke="var(--muted)" stroke-dasharray="3 3" style="display:none"/><rect x="${L}" y="0" width="${W-L-Rp}" height="${H}" fill="transparent"/></svg><div class="tip"></div>`;
+  const svg = el.querySelector("svg"), tip = el.querySelector(".tip"), xh = el.querySelector(".xh");
+  svg.addEventListener("mousemove", e=>{
+    const r = svg.getBoundingClientRect(), mx = e.clientX - r.left;
+    const i = Math.max(0, Math.min(labels.length-1, Math.round((mx-L)/((W-L-Rp)/Math.max(1,labels.length-1)))));
+    xh.setAttribute("x1", x(i)); xh.setAttribute("x2", x(i)); xh.style.display = "";
+    tip.style.display = "block"; tip.innerHTML = `<b>${esc(labels[i])}</b><br>${opts.name||"Score"}: ${ys[i]==null?"—":(+ys[i]).toFixed(opts.dec??0)}`;
+    tip.style.left = Math.min(x(i)+10, W-140)+"px"; tip.style.top = "10px";
+  });
+  svg.addEventListener("mouseleave", ()=>{ tip.style.display="none"; xh.style.display="none"; });
+}
+
+function groupChart(list){
+  const ys = R.map((_,i)=>avg(list.map(m=>m.m[i]?m.m[i][0]:null)));
+  const c=$("fChapter").value, r=$("fRegion").value;
+  $("grpTitle").textContent = `Average Total Score by report – ${c||r||"all members"}${$("fStatus").value||$("fSearch").value?" (filtered)":""}`;
+  lineChart($("grpChart"), R, ys, {dec:1, name:"Avg score", h:200, aria:"Average score by month"});
+}
+
+function detail(m){
+  const ptsCell = v => { if(v==null) return '<td class="n muted">—</td>'; const a = v/20; return `<td class="n"><span class="pts" style="background:rgba(42,120,214,${(0.08+a*0.42).toFixed(2)})">${v}</span></td>`; };
+  const rawFmt = (v,j) => v==null ? "—" : j===0 ? Math.round(v*100)+"%" : v.toFixed(2);
+  const last = m.m.filter(Boolean).pop();
+  $("detail").innerHTML = `
+    <h2>${esc(m.n)}</h2>
+    <div class="muted" style="margin:-4px 0 10px">${esc(m.c)} · ${esc(m.r)} · <span class="chip ${chipCls(m.st)}">${esc(m.st)}</span></div>
+    <div class="tiles" style="grid-template-columns:repeat(3,1fr)">
+      <div class="tile"><div class="k">Latest score</div><div class="v">${m.cur??"—"}</div><div class="d">${last?last[11]+" weeks of data":""}</div></div>
+      <div class="tile"><div class="k">1-month change</div><div class="v" style="font-size:18px">${fmtD(m.d1)}</div></div>
+      <div class="tile"><div class="k">Since first report</div><div class="v" style="font-size:18px">${fmtD(m.dA)}</div></div>
+    </div>
+    <div class="k muted" style="font-size:12px">Total score – 6-month rolling windows (longer history)</div>
+    <div class="chart" id="mChart"></div>
+    <div style="margin-top:10px;font-size:12px" class="muted">Category points (of 20) by report · focus area: <b style="color:var(--text)">${esc(m.f)}</b></div>
+    <div style="overflow:auto"><table class="cat"><thead><tr><th></th>${R.map(r=>`<th class="n">${esc(r.replace(" 20"," '"))}</th>`).join("")}</tr></thead><tbody>
+      ${CAT.map((c,j)=>`<tr><td>${c}</td>${m.m.map(x=>ptsCell(x?x[6+j]:null)).join("")}</tr>`).join("")}
+      <tr><td><b>Total</b></td>${m.m.map(x=>`<td class="n"><b>${x?x[0]:"—"}</b></td>`).join("")}</tr>
+    </tbody></table></div>
+    <div style="margin-top:10px;font-size:12px" class="muted">Raw activity by report</div>
+    <div style="overflow:auto"><table class="cat"><thead><tr><th></th>${R.map(r=>`<th class="n">${esc(r.replace(" 20"," '"))}</th>`).join("")}</tr></thead><tbody>
+      ${RAW.map((c,j)=>`<tr><td>${c}</td>${m.m.map(x=>`<td class="n">${x?rawFmt(x[1+j],j):"—"}</td>`).join("")}</tr>`).join("")}
+    </tbody></table></div>`;
+  lineChart($("mChart"), D.hist, m.h, {h:190, aria:`${m.n} score history`});
+}
+render();
+window.addEventListener("resize", ()=>{ render(); if(selected) detail(selected); });
+</script>
+</body>
+</html>

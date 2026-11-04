@@ -1,0 +1,10 @@
+# Member data stays local – never commit it
+Source Data/
+Reports/
+*.xlsx
+*.xls
+*.csv
+# local tooling
+.claude/
+__pycache__/
+.DS_Store

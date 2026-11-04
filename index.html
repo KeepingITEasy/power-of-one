@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Power of One Trends</title>
+<meta name="description" content="Analyze BNI Power of One monthly reports per member and show trends. Files are processed in your browser and never uploaded.">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  color-scheme: light;
+  --bg:#f4f4f2; --surface:#fcfcfb; --border:#e3e2de; --grid:#ecebe7;
+  --text:#0b0b0b; --text2:#52514e; --muted:#8a8984;
+  --series:#2a78d6; --series-soft:rgba(42,120,214,.12);
+  --good:#0f7a3d; --good-bg:#e3f4e8; --bad:#b42318; --bad-bg:#fde8e6; --neutral-bg:#efefec; --new-bg:#e6effa;
+  --btn:#1f4e79; --btn-text:#fff;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#121211; --surface:#1a1a19; --border:#2e2d2b; --grid:#262624;
+    --text:#f0efec; --text2:#c3c2b7; --muted:#8f8e86;
+    --series:#3987e5; --series-soft:rgba(57,135,229,.18);
+    --good:#5fd08a; --good-bg:#16301f; --bad:#ff8a80; --bad-bg:#3a1a17; --neutral-bg:#252523; --new-bg:#182638;
+    --btn:#3987e5; --btn-text:#0b0b0b;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#121211; --surface:#1a1a19; --border:#2e2d2b; --grid:#262624;
+  --text:#f0efec; --text2:#c3c2b7; --muted:#8f8e86;
+  --series:#3987e5; --series-soft:rgba(57,135,229,.18);
+  --good:#5fd08a; --good-bg:#16301f; --bad:#ff8a80; --bad-bg:#3a1a17; --neutral-bg:#252523; --new-bg:#182638;
+  --btn:#3987e5; --btn-text:#0b0b0b;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:22px;margin:0 0 2px}
+.sub{color:var(--text2);margin:0 0 18px}
+.drop{border:2px dashed var(--border);border-radius:14px;background:var(--surface);padding:28px 18px;text-align:center;margin-bottom:16px;transition:border-color .15s}
+.drop.over{border-color:var(--series)}
+.drop b{font-size:16px}
+.drop p{margin:6px 0;color:var(--text2)}
+button,.btn{font:inherit;border:0;border-radius:8px;padding:8px 14px;background:var(--btn);color:var(--btn-text);cursor:pointer}
+button.ghost{background:transparent;color:var(--text);border:1px solid var(--border)}
+button:disabled{opacity:.5;cursor:default}
+.files{font-size:12px;color:var(--text2);margin-top:10px;text-align:left;display:inline-block}
+.files .err{color:var(--bad)}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;align-items:center}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.filters select,.filters input{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 10px;min-width:0;max-width:100%}
+.filters input{flex:1 1 220px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
+.tile .k{color:var(--text2);font-size:12px}
+.tile .v{font-size:24px;font-weight:650;font-variant-numeric:tabular-nums}
+.tile .d{font-size:12px;color:var(--text2)}
+.grid2{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:14px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;min-width:0}
+.card h2{font-size:15px;margin:0 0 8px}
+.tablewrap{overflow:auto;max-height:640px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:6px 8px;border-bottom:1px solid var(--grid);text-align:left;white-space:nowrap}
+th{position:sticky;top:0;background:var(--surface);color:var(--text2);font-weight:600;font-size:12px;cursor:pointer;user-select:none}
+td.n,th.n{text-align:right}
+#tbl tbody tr{cursor:pointer}
+#tbl tbody tr:hover{background:var(--series-soft)}
+#tbl tbody tr.sel{background:var(--series-soft);outline:1px solid var(--series)}
+.chip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px}
+.Improving{background:var(--good-bg);color:var(--good)}
+.Declining{background:var(--bad-bg);color:var(--bad)}
+.Steady{background:var(--neutral-bg);color:var(--text2)}
+.New,.Gone{background:var(--new-bg);color:var(--text2)}
+.up{color:var(--good)} .dn{color:var(--bad)}
+.muted{color:var(--muted)}
+svg text{fill:var(--text2);font-size:11px}
+.chart{position:relative}
+.tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px 9px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.12);display:none;white-space:nowrap;color:var(--text)}
+.cat td:first-child{color:var(--text2)}
+.pts{display:inline-block;min-width:28px;text-align:center;border-radius:4px;padding:0 4px}
+.empty{color:var(--muted);padding:30px 0;text-align:center}
+.notes{font-size:12px;color:var(--text2);margin-top:16px}
+.notes li{margin:3px 0}
+#app{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Power of One – Member Trends</h1>
+  <p class="sub">Drop in your monthly Power of One spreadsheets to see each member's trend. Files are read in your browser and never uploaded.</p>
+
+  <div class="drop" id="drop">
+    <b>Drop Power of One .xlsx files here</b>
+    <p>Add two or more months. Name each file starting with the report month, like <code>2026-10 …xlsx</code>.</p>
+    <p><label class="btn" for="pick">Choose files</label><input id="pick" type="file" accept=".xlsx,.xls" multiple hidden></p>
+    <div class="files" id="files"></div>
+  </div>
+
+  <div id="app">
+    <p class="sub" id="sub"></p>
+    <div class="actions">
+      <button id="dlAll">Download full Excel report</button>
+      <button id="dlChap" class="ghost" disabled>Download chapter report</button>
+      <button id="reset" class="ghost">Clear files</button>
+    </div>
+    <div class="filters">
+      <select id="fRegion" aria-label="Region"></select>
+      <select id="fChapter" aria-label="Chapter"></select>
+      <select id="fStatus" aria-label="Status"></select>
+      <input id="fSearch" type="search" placeholder="Search member…" aria-label="Search member">
+    </div>
+    <div class="tiles" id="tiles"></div>
+    <div class="grid2">
+      <div class="card">
+        <h2>Members <span class="muted" id="count"></span></h2>
+        <div class="tablewrap"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card" id="detail"><div class="empty">Select a member to see their trend.</div></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h2 id="grpTitle">Average Total Score</h2>
+      <div class="chart" id="grpChart"></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h2>Chapters</h2>
+      <div class="tablewrap" style="max-height:420px"><table id="chapTbl"></table></div>
+    </div>
+    <ul class="notes">
+      <li>Each report covers the 6 months of PALMS data before it (the October report covers April–September).</li>
+      <li><b>Improving</b> = trend ≥ +2 pts/month or ≥ +15 since first report; <b>Declining</b> = ≤ −2 pts/month or ≤ −15; otherwise <b>Steady</b>. Needs 3+ months.</li>
+      <li><b>Focus area</b> = the category with the fewest points in the member's latest report.</li>
+      <li>Members are matched by name across chapters, so chapter moves keep their history. A spelling change shows as two members.</li>
+    </ul>
+  </div>
+</div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const norm = s => s == null ? null : String(s).replace(/\s+/g, " ").trim();
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const pLabel = p => `${MON[p%12]} ${Math.floor(p/12)}`;
+const pShort = p => `${MON[p%12]} '${String(Math.floor(p/12)).slice(2)}`;
+const CAT = ["Attendance","Referrals","Visitors","1-to-1s","CEUs"];
+const RAWN = ["Attendance %","Referrals/Wk","Visitors/Wk","1-to-1s/Wk","CEUs/Wk"];
+const FOCUS_ORDER = [4,2,1,3,0]; // tie-break: CEU, Visitors, Referrals, 1-to-1s, Attendance
+const num = v => (v === "" || v == null || isNaN(+v)) ? null : +v;
+
+/* ---------- file loading ---------- */
+let loaded = []; // {name, period, rows, hist}
+function periodFrom(name, wb){
+  const m = name.match(/(20\d\d)[-_ ]?(\d\d)/);
+  if (m) return +m[1]*12 + (+m[2]-1);
+  const ra = wb.Sheets["Region Averages"];
+  if (ra){ const hdr = XLSX.utils.sheet_to_json(ra, {header:1, raw:true})[0] || [];
+    const ds = hdr.filter(v => v instanceof Date || typeof v === "number").map(v => v instanceof Date ? v : XLSX.SSF.parse_date_code(v));
+    if (ds.length){ const d = ds[ds.length-1]; return (d.getFullYear ? d.getFullYear() : d.y)*12 + (d.getMonth ? d.getMonth() : d.m-1); } }
+  return null;
+}
+function parseFile(name, buf){
+  const wb = XLSX.read(buf, {type:"array", sheets:["Power of One","Monthly","Region Averages"], cellDates:true});
+  const ps = wb.Sheets["Power of One"], ms = wb.Sheets["Monthly"];
+  if (!ps) throw new Error("no 'Power of One' sheet");
+  const period = periodFrom(name, wb);
+  if (period == null) throw new Error("can't tell the month — rename it to start with YYYY-MM");
+  const P = XLSX.utils.sheet_to_json(ps, {header:1, raw:true, defval:null});
+  const h = (P[0]||[]).map(norm);
+  const iC = h.indexOf("Chapter"), iN = h.indexOf("Name (weeks of PALMS data)"), iT = h.indexOf("Total Score"), iR = h.indexOf("Region");
+  if (iC < 0 || iN < 0 || iT < 0) throw new Error("unexpected 'Power of One' columns");
+  const regionMap = {}, hist = [];
+  if (ms){
+    const M = XLSX.utils.sheet_to_json(ms, {header:1, raw:true, defval:null});
+    const mh = (M[0]||[]).map(norm);
+    const mR = mh.indexOf("Region"), mC = mh.indexOf("Chapter"), mN = mh.indexOf("Name");
+    const wcols = mh.map((c,i) => /^[A-Z][a-z]{2}-[A-Z][a-z]{2}$/.test(c||"") ? i : -1).filter(i => i >= 0);
+    for (const r of M.slice(1)){
+      const c = norm(r[mC]), n = norm(r[mN]); if (!n) continue;
+      if (!((c+"|"+n) in regionMap)) regionMap[c+"|"+n] = norm(r[mR]);
+      wcols.forEach((ci, k) => { const v = num(r[ci]); if (v != null) hist.push({region:norm(r[mR]), chapter:c, name:n, end: period - (wcols.length - k), score:v}); });
+    }
+  }
+  const rows = [];
+  for (const r of P.slice(1)){
+    const nw = r[iN]; if (nw == null || String(nw).trim() === "") continue;
+    const s = String(nw), wk = s.match(/\((\d+)\)\s*$/);
+    const name = norm(s.replace(/\s*\(\d+\)\s*$/, "")), chapter = norm(r[iC]);
+    const v = k => num(r[iT+k]);
+    rows.push({period, chapter, name, region: regionMap[chapter+"|"+name] ?? (iR >= 0 ? norm(r[iR]) : null),
+      weeks: wk ? +wk[1] : null, total: v(0),
+      raw:[v(1), v(3), v(5), v(7), v(9)], pts:[v(2), v(4), v(6), v(8), v(10)]});
+  }
+  return {name, period, rows, hist};
+}
+async function addFiles(fileList){
+  const box = $("files");
+  for (const f of fileList){
+    try {
+      const r = parseFile(f.name, await f.arrayBuffer());
+      loaded = loaded.filter(x => x.period !== r.period).concat(r);
+    } catch(e){ box.insertAdjacentHTML("beforeend", `<div class="err">✕ ${esc(f.name)}: ${esc(e.message)}</div>`); }
+  }
+  loaded.sort((a,b) => a.period - b.period);
+  box.querySelectorAll(".ok").forEach(e => e.remove());
+  box.insertAdjacentHTML("afterbegin", loaded.map(x => `<div class="ok">✓ ${esc(pLabel(x.period))} — ${x.rows.length} members · ${esc(x.name)}</div>`).join(""));
+  if (loaded.length >= 1) analyze();
+}
+const drop = $("drop");
+["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => addFiles(e.dataTransfer.files));
+$("pick").addEventListener("change", e => { addFiles(e.target.files); e.target.value = ""; });
+$("reset").onclick = () => { loaded = []; $("files").innerHTML = ""; $("app").style.display = "none"; };
+
+/* ---------- analysis ---------- */
+let D = null;
+function slope(ys){
+  const pts = ys.map((y,i) => [i,y]).filter(p => p[1] != null);
+  if (pts.length < 3) return null;
+  const n = pts.length, mx = pts.reduce((s,p)=>s+p[0],0)/n, my = pts.reduce((s,p)=>s+p[1],0)/n;
+  const sxx = pts.reduce((s,p)=>s+(p[0]-mx)**2,0); return sxx ? pts.reduce((s,p)=>s+(p[0]-mx)*(p[1]-my),0)/sxx : null;
+}
+const avg = a => { a = a.filter(v => v != null); return a.length ? a.reduce((s,v)=>s+v,0)/a.length : null; };
+function analyze(){
+  const reports = loaded.map(x => x.period), NR = reports.length;
+  let rows = loaded.flatMap(x => x.rows), hist = loaded.flatMap(x => x.hist.map(h => ({...h, src:x.period})));
+  // canonical chapters: "X" == "BNI X"
+  const chs = new Set([...rows.map(r=>r.chapter), ...hist.map(h=>h.chapter)]);
+  const canon = c => (!c?.startsWith("BNI ") && chs.has("BNI "+c)) ? "BNI "+c : c;
+  rows.forEach(r => r.chapter = canon(r.chapter)); hist.forEach(h => h.chapter = canon(h.chapter));
+  // region fallback
+  const reg = {}; rows.forEach(r => { if (r.region) reg[r.chapter+"|"+r.name] = r.region; });
+  hist.forEach(h => { if (h.region && !reg[h.chapter+"|"+h.name]) reg[h.chapter+"|"+h.name] = h.region; });
+  rows.forEach(r => r.region = r.region || reg[r.chapter+"|"+r.name] || "Unknown");
+  // person key (name unless two people share a name in one report)
+  const seen = {}, clash = new Set();
+  rows.forEach(r => { const k = r.period+"|"+r.name; (seen[k] ??= new Set()).add(r.chapter); if (seen[k].size > 1) clash.add(r.name); });
+  const key = (n,c) => clash.has(n) ? n+" | "+c : n;
+  rows.forEach(r => r.key = key(r.name, r.chapter)); hist.forEach(h => h.key = key(h.name, h.chapter));
+  // history: latest source wins
+  const ends = [...new Set(hist.map(h => h.end))].sort((a,b)=>a-b);
+  const H = {}; hist.sort((a,b)=>a.src-b.src).forEach(h => { (H[h.key] ??= {})[h.end] = h.score; });
+  // members
+  const by = {}; rows.forEach(r => (by[r.key] ??= []).push(r));
+  const members = Object.entries(by).map(([k, rs]) => {
+    rs.sort((a,b)=>a.period-b.period);
+    const m = reports.map(p => rs.find(r => r.period === p) || null);
+    const vals = m.map(r => r ? r.total : null), have = vals.map(v => v != null);
+    const fi = have.indexOf(true), li = have.lastIndexOf(true), cnt = have.filter(Boolean).length;
+    const cur = vals[NR-1], pv = NR > 1 ? vals[NR-2] : null, sl = slope(vals);
+    const chg = cnt > 1 ? vals[li] - vals[fi] : null;
+    let st;
+    if (cur == null) st = "Not in latest report";
+    else if (cnt === 1) st = "New this month";
+    else if (cnt < 3) st = "New (≤2 months)";
+    else if (sl >= 2 || chg >= 15) st = "Improving";
+    else if (sl <= -2 || chg <= -15) st = "Declining";
+    else st = "Steady";
+    const last = m[li], first = m[fi];
+    const fIdx = [0,1,2,3,4].sort((a,b) => (last.pts[a]??0)-(last.pts[b]??0) || FOCUS_ORDER.indexOf(a)-FOCUS_ORDER.indexOf(b))[0];
+    const dl = [0,1,2,3,4].map(i => (last.pts[i]??0) - (first.pts[i]??0));
+    const gi = dl.indexOf(Math.max(...dl)), di = dl.indexOf(Math.min(...dl));
+    const moves = [...new Set(rs.map(r => r.chapter))];
+    return { key:k, n:last.name, c:last.chapter, r:last.region, st, cur, d1: cur!=null&&pv!=null ? cur-pv : null, dA: chg,
+      slope: sl == null ? null : Math.round(sl*10)/10, months: cnt, weeks: last.weeks, f: CAT[fIdx],
+      gain: dl[gi] > 0 ? `${CAT[gi]} (+${dl[gi]})` : "—", drop: dl[di] < 0 ? `${CAT[di]} (${dl[di]})` : "—",
+      mv: moves.length > 1 ? moves.join(" → ") : "", m, last,
+      h: ends.map(e => H[k]?.[e] ?? null) };
+  }).sort((a,b) => a.r.localeCompare(b.r) || a.c.localeCompare(b.c) || (b.cur??-1)-(a.cur??-1));
+  D = { reports, NR, ends, members, rows };
+  startUI();
+}
+
+/* ---------- UI ---------- */
+const fmtD = v => v==null ? '<span class="muted">—</span>' : v>0 ? `<span class="up">▲ ${v}</span>` : v<0 ? `<span class="dn">▼ ${-v}</span>` : '<span class="muted">0</span>';
+const chipCls = s => s.startsWith("New") ? "New" : s.startsWith("Not") ? "Gone" : s;
+const uniq = a => [...new Set(a)].sort();
+function opts(el, label, vals){ const cur = el.value; el.innerHTML = `<option value="">${label}</option>` + vals.map(v=>`<option>${esc(v)}</option>`).join(""); if (vals.includes(cur)) el.value = cur; }
+let sortKey = "cur", sortDir = -1, selected = null;
+const COLS = [["n","Member / chapter"],["spark","Trend"],["cur","Score","n"],["d1","1-mo","n"],["dA","Since first","n"],["st","Status"],["f","Focus area"]];
+$("tbl").innerHTML = "<thead><tr>" + COLS.map(([k,l,c])=>`<th data-k="${k}" class="${c||""}">${l}</th>`).join("") + "</tr></thead><tbody></tbody>";
+$("tbl").querySelector("thead").onclick = e => { const k = e.target.dataset.k; if(!k||k==="spark") return; sortDir = sortKey===k ? -sortDir : (k==="n"?1:-1); sortKey = k; render(); };
+$("tbl").querySelector("tbody").onclick = e => { const tr = e.target.closest("tr"); if(!tr) return; selected = D.members[+tr.dataset.i]; render(); detail(selected); };
+function refreshChapters(){ const r = $("fRegion").value; opts($("fChapter"), "All chapters", uniq(D.members.filter(m=>!r||m.r===r).map(m=>m.c))); }
+["fRegion","fChapter","fStatus","fSearch"].forEach(id => $(id).addEventListener("input", () => { if(id==="fRegion") refreshChapters(); $("dlChap").disabled = !$("fChapter").value; render(); }));
+
+function startUI(){
+  $("app").style.display = "block";
+  const R = D.reports;
+  $("sub").textContent = `${pLabel(R[0])} – ${pLabel(R[D.NR-1])} · ${D.NR} report${D.NR>1?"s":""} · latest covers ${MON[(R[D.NR-1]-6)%12]}–${pLabel(R[D.NR-1]-1)} · ${D.members.filter(m=>m.cur!=null).length} active members`;
+  opts($("fRegion"), "All regions", uniq(D.members.map(m=>m.r)));
+  opts($("fStatus"), "All statuses", ["Improving","Steady","Declining","New this month","New (≤2 months)","Not in latest report"]);
+  refreshChapters(); selected = null;
+  $("detail").innerHTML = '<div class="empty">Select a member to see their trend.</div>';
+  render(); chapterTable();
+}
+function filtered(){
+  const r=$("fRegion").value, c=$("fChapter").value, s=$("fStatus").value, q=$("fSearch").value.trim().toLowerCase();
+  return D.members.filter(m => (!r||m.r===r) && (!c||m.c===c) && (!s||m.st===s) && (!q||m.n.toLowerCase().includes(q)));
+}
+function spark(m){
+  const w=90,h=24,p=3,N=D.NR, ys=m.m.map(x=>x?x.total:null);
+  const pts = ys.map((y,i)=>y==null?null:[p+(N>1?i*(w-2*p)/(N-1):w/2), h-p-(y/100)*(h-2*p)]);
+  let d="", on=false; pts.forEach(q=>{ if(!q){on=false;return;} d+=(on?"L":"M")+q[0].toFixed(1)+" "+q[1].toFixed(1); on=true; });
+  const last = pts.filter(Boolean).pop();
+  return `<svg width="${w}" height="${h}" aria-hidden="true"><path d="${d}" fill="none" stroke="var(--series)" stroke-width="1.6"/>${last?`<circle cx="${last[0]}" cy="${last[1]}" r="2.5" fill="var(--series)"/>`:""}</svg>`;
+}
+function render(){
+  const list = filtered().sort((a,b)=>{ const x=a[sortKey], y=b[sortKey]; if(x==null) return 1; if(y==null) return -1; return (x>y?1:x<y?-1:0)*sortDir; });
+  $("count").textContent = `(${list.length})`;
+  $("tbl").querySelector("tbody").innerHTML = list.map(m=>`<tr data-i="${D.members.indexOf(m)}" class="${m===selected?"sel":""}">
+    <td><div>${esc(m.n)}</div><div class="muted" style="font-size:11px">${esc(m.c)}</div></td><td>${spark(m)}</td>
+    <td class="n"><b>${m.cur??"—"}</b></td><td class="n">${fmtD(m.d1)}</td><td class="n">${fmtD(m.dA)}</td>
+    <td><span class="chip ${chipCls(m.st)}">${esc(m.st)}</span></td><td>${esc(m.f)}</td></tr>`).join("");
+  tiles(list); groupChart(list);
+}
+function tiles(list){
+  const N = D.NR, act = list.filter(m=>m.cur!=null);
+  const a = avg(act.map(m=>m.cur)), pa = N>1 ? avg(list.map(m=>m.m[N-2]?.total)) : null, fa = avg(list.map(m=>m.m[0]?.total));
+  const cnt = s => act.filter(m=>m.st===s).length;
+  const d = (x,y) => x==null||y==null ? "" : (x-y>=0?"▲ ":"▼ ")+Math.abs(x-y).toFixed(1);
+  const t70 = act.filter(m=>m.cur>=70).length;
+  $("tiles").innerHTML = [
+    ["Active members", act.length, ""],
+    ["Avg score (latest)", a==null?"—":a.toFixed(1), N>1 ? `${d(a,pa)} vs last month · ${d(a,fa)} vs ${pShort(D.reports[0])}` : ""],
+    ["Improving", cnt("Improving"), "trend ≥ +2 pts/mo"],
+    ["Steady", cnt("Steady"), ""],
+    ["Declining", cnt("Declining"), "trend ≤ −2 pts/mo"],
+    ["Scoring 70+", t70, act.length ? Math.round(100*t70/act.length)+"% of active" : ""],
+  ].map(([k,v,dd])=>`<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${dd}</div></div>`).join("");
+}
+function lineChart(el, labels, ys, o={}){
+  const W = Math.max(300, el.clientWidth||600), H = o.h||220, L=34, Rp=14, T=14, B=28, N = labels.length;
+  const x = i => N>1 ? L + i*(W-L-Rp)/(N-1) : (L+W-Rp)/2, y = v => T + (1-v/100)*(H-T-B);
+  let g = "";
+  [0,25,50,75,100].forEach(v=>{ g += `<line x1="${L}" x2="${W-Rp}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${L-6}" y="${y(v)+4}" text-anchor="end">${v}</text>`; });
+  const step = Math.max(1, Math.ceil(N/(W<500?4:8)));
+  labels.forEach((l,i)=>{ const last=N-1; if(i===last||(i%step===0&&last-i>=step*0.75)) g += `<text x="${x(i)}" y="${H-8}" text-anchor="${i===last&&N>1?"end":"middle"}">${esc(l)}</text>`; });
+  let d="", on=false; ys.forEach((v,i)=>{ if(v==null){on=false;return;} d += (on?"L":"M")+x(i).toFixed(1)+" "+y(v).toFixed(1); on=true; });
+  const dots = ys.map((v,i)=>v==null?"":`<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="var(--series)" stroke="var(--surface)" stroke-width="2"/>`).join("");
+  const li = ys.map((v,i)=>v==null?-1:i).filter(i=>i>=0).pop();
+  const lbl = li!=null ? `<text x="${x(li)}" y="${y(ys[li])-10}" text-anchor="middle" style="fill:var(--text);font-weight:600">${(+ys[li]).toFixed(o.dec??0)}</text>` : "";
+  el.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="${esc(o.aria||"Score trend")}">${g}<path d="${d}" fill="none" stroke="var(--series)" stroke-width="2" stroke-linejoin="round"/>${dots}${lbl}<line class="xh" y1="${T}" y2="${H-B}" stroke="var(--muted)" stroke-dasharray="3 3" style="display:none"/><rect x="${L}" y="0" width="${W-L-Rp}" height="${H}" fill="transparent"/></svg><div class="tip"></div>`;
+  const svg = el.querySelector("svg"), tip = el.querySelector(".tip"), xh = el.querySelector(".xh");
+  svg.addEventListener("mousemove", e=>{
+    const mx = e.clientX - svg.getBoundingClientRect().left;
+    const i = N>1 ? Math.max(0, Math.min(N-1, Math.round((mx-L)/((W-L-Rp)/(N-1))))) : 0;
+    xh.setAttribute("x1", x(i)); xh.setAttribute("x2", x(i)); xh.style.display = "";
+    tip.style.display = "block"; tip.innerHTML = `<b>${esc(labels[i])}</b><br>${o.name||"Score"}: ${ys[i]==null?"—":(+ys[i]).toFixed(o.dec??0)}`;
+    tip.style.left = Math.min(x(i)+10, W-150)+"px"; tip.style.top = "10px";
+  });
+  svg.addEventListener("mouseleave", ()=>{ tip.style.display="none"; xh.style.display="none"; });
+}
+function groupChart(list){
+  const ys = D.reports.map((_,i)=>avg(list.map(m=>m.m[i]?.total)));
+  const c=$("fChapter").value, r=$("fRegion").value, f = $("fStatus").value||$("fSearch").value;
+  $("grpTitle").textContent = `Average Total Score by report – ${c||r||"all members"}${f?" (filtered)":""}`;
+  lineChart($("grpChart"), D.reports.map(pShort), ys, {dec:1, name:"Avg score", h:200, aria:"Average score by month"});
+}
+const winLabel = e => `${MON[(e-5)%12]}–${pShort(e)}`;
+function detail(m){
+  const R = D.reports;
+  const ptsCell = v => v==null ? '<td class="n muted">—</td>' : `<td class="n"><span class="pts" style="background:rgba(57,135,229,${(0.08+v/20*0.42).toFixed(2)})">${v}</span></td>`;
+  const rawFmt = (v,j) => v==null ? "—" : j===0 ? Math.round(v*100)+"%" : v.toFixed(2);
+  const hasHist = m.h.some(v=>v!=null);
+  $("detail").innerHTML = `
+    <h2>${esc(m.n)}</h2>
+    <div class="muted" style="margin:-4px 0 10px">${esc(m.c)} · ${esc(m.r)} · <span class="chip ${chipCls(m.st)}">${esc(m.st)}</span>${m.mv?`<br>Chapter moves: ${esc(m.mv)}`:""}</div>
+    <div class="tiles" style="grid-template-columns:repeat(3,1fr)">
+      <div class="tile"><div class="k">Latest score</div><div class="v">${m.cur??"—"}</div><div class="d">${m.weeks?m.weeks+" weeks of data":""}</div></div>
+      <div class="tile"><div class="k">1-month change</div><div class="v" style="font-size:18px">${fmtD(m.d1)}</div></div>
+      <div class="tile"><div class="k">Since first report</div><div class="v" style="font-size:18px">${fmtD(m.dA)}</div></div>
+    </div>
+    <div class="muted" style="font-size:12px">${hasHist ? "Total score – 6-month rolling windows (longer history)" : "Total score by report"}</div>
+    <div class="chart" id="mChart"></div>
+    <div style="margin-top:10px;font-size:12px" class="muted">Category points (of 20) by report · focus area: <b style="color:var(--text)">${esc(m.f)}</b> · biggest gain: ${esc(m.gain)} · biggest drop: ${esc(m.drop)}</div>
+    <div style="overflow:auto"><table class="cat"><thead><tr><th></th>${R.map(p=>`<th class="n">${pShort(p)}</th>`).join("")}</tr></thead><tbody>
+      ${CAT.map((c,j)=>`<tr><td>${c}</td>${m.m.map(x=>ptsCell(x?x.pts[j]:null)).join("")}</tr>`).join("")}
+      <tr><td><b>Total</b></td>${m.m.map(x=>`<td class="n"><b>${x?x.total:"—"}</b></td>`).join("")}</tr>
+    </tbody></table></div>
+    <div style="margin-top:10px;font-size:12px" class="muted">Raw activity by report</div>
+    <div style="overflow:auto"><table class="cat"><thead><tr><th></th>${R.map(p=>`<th class="n">${pShort(p)}</th>`).join("")}</tr></thead><tbody>
+      ${RAWN.map((c,j)=>`<tr><td>${c}</td>${m.m.map(x=>`<td class="n">${x?rawFmt(x.raw[j],j):"—"}</td>`).join("")}</tr>`).join("")}
+    </tbody></table></div>`;
+  if (hasHist) lineChart($("mChart"), D.ends.map(winLabel), m.h, {h:190, aria:`${m.n} score history`});
+  else lineChart($("mChart"), R.map(pShort), m.m.map(x=>x?.total ?? null), {h:190, aria:`${m.n} score by report`});
+}
+function chapterStats(){
+  const R = D.reports, g = {};
+  D.rows.forEach(r => { const k = r.region+"|"+r.chapter; ((g[k] ??= {region:r.region, chapter:r.chapter, by:{}}).by[r.period] ??= []).push(r); });
+  return Object.values(g).map(c => {
+    const s = R.map(p => c.by[p] ? avg(c.by[p].map(r=>r.total)) : null);
+    const li = s.length-1, fi = s.findIndex(v=>v!=null);
+    return {...c, s, n: c.by[R[li]]?.length ?? null, d1: s[li]!=null&&s[li-1]!=null ? s[li]-s[li-1] : null, dA: s[li]!=null&&fi>=0&&fi<li ? s[li]-s[fi] : null};
+  }).sort((a,b)=>(b.s[b.s.length-1]??-1)-(a.s[a.s.length-1]??-1));
+}
+function chapterTable(){
+  const R = D.reports, f1 = v => v==null ? '<span class="muted">—</span>' : v.toFixed(1);
+  const fd = v => v==null ? '<span class="muted">—</span>' : v>0 ? `<span class="up">▲ ${v.toFixed(1)}</span>` : v<0 ? `<span class="dn">▼ ${(-v).toFixed(1)}</span>` : "0";
+  $("chapTbl").innerHTML = `<thead><tr><th>Chapter</th><th>Region</th>${R.map(p=>`<th class="n">${pShort(p)}</th>`).join("")}<th class="n">Members</th><th class="n">1-mo</th><th class="n">Since first</th></tr></thead><tbody>` +
+    chapterStats().map(c=>`<tr><td>${esc(c.chapter)}</td><td class="muted">${esc(c.region)}</td>${c.s.map(v=>`<td class="n">${f1(v)}</td>`).join("")}<td class="n">${c.n??"—"}</td><td class="n">${fd(c.d1)}</td><td class="n">${fd(c.dA)}</td></tr>`).join("") + "</tbody>";
+}
+window.addEventListener("resize", () => { if (!D) return; render(); if (selected) detail(selected); });
+
+/* ---------- Excel export ---------- */
+function summaryRows(list){
+  const R = D.reports;
+  return list.map(m => { const o = {Region:m.r, Chapter:m.c, Member:m.n};
+    R.forEach((p,i) => o[pLabel(p)] = m.m[i]?.total ?? null);
+    Object.assign(o, {"1-Mo Change":m.d1, "Change Since First":m.dA, "Trend (pts/mo)":m.slope, "Months Reported":m.months, Status:m.st,
+      "Weeks of Data (latest)":m.weeks, "Attendance %":m.last.raw[0], "Ref/Wk":m.last.raw[1], "Visitor/Wk":m.last.raw[2], "121/Wk":m.last.raw[3], "CEU/Wk":m.last.raw[4],
+      "Focus Area (lowest pts)":m.f, "Biggest Gain":m.gain, "Biggest Drop":m.drop, "Chapter Moves":m.mv});
+    return o; });
+}
+function sheet(rows, widths){ const ws = XLSX.utils.json_to_sheet(rows); if (rows.length) ws["!cols"] = Object.keys(rows[0]).map(k => ({wch: widths?.[k] ?? Math.min(34, Math.max(9, k.length+2))})); return ws; }
+function download(list, name, includeAll){
+  const R = D.reports, wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, sheet(summaryRows(list), {Chapter:32, Member:24, Region:28, Status:20, "Chapter Moves":40}), "Member Summary");
+  const hist = list.filter(m=>m.h.some(v=>v!=null)).map(m => { const o = {Region:m.r, Chapter:m.c, Member:m.n}; D.ends.forEach((e,i)=>o[winLabel(e)] = m.h[i]); return o; });
+  if (hist.length) XLSX.utils.book_append_sheet(wb, sheet(hist, {Chapter:32, Member:24, Region:28}), "Score History");
+  [["Attendance %",0],["Referrals per Wk",1],["Visitors per Wk",2],["1-to-1s per Wk",3],["CEUs per Wk",4]].forEach(([nm,j]) => {
+    XLSX.utils.book_append_sheet(wb, sheet(list.map(m => { const o = {Region:m.r, Chapter:m.c, Member:m.n}; R.forEach((p,i)=>o[pLabel(p)] = m.m[i]?.raw[j] ?? null); return o; }), {Chapter:32, Member:24, Region:28}), nm);
+  });
+  const chs = new Set(list.map(m=>m.c));
+  XLSX.utils.book_append_sheet(wb, sheet(chapterStats().filter(c=>includeAll||chs.has(c.chapter)).map(c => { const o = {Region:c.region, Chapter:c.chapter}; R.forEach((p,i)=>o[pLabel(p)] = c.s[i]==null?null:Math.round(c.s[i]*10)/10); Object.assign(o, {"Members (latest)":c.n, "1-Mo Change":c.d1==null?null:Math.round(c.d1*10)/10, "Change Since First":c.dA==null?null:Math.round(c.dA*10)/10}); return o; }), {Chapter:32, Region:28}), "Chapter Trends");
+  if (includeAll){
+    const act = list.filter(m => m.cur!=null && m.months>1);
+    const top = (arr) => arr.map(m => ({Region:m.r, Chapter:m.c, Member:m.n, First:m.m.find(Boolean).total, Latest:m.cur, Change:m.dA}));
+    XLSX.utils.book_append_sheet(wb, sheet(top([...act].sort((a,b)=>b.dA-a.dA).slice(0,25)), {Chapter:32, Member:24, Region:28}), "Top Improvers");
+    XLSX.utils.book_append_sheet(wb, sheet(top([...act].sort((a,b)=>a.dA-b.dA).slice(0,25)), {Chapter:32, Member:24, Region:28}), "Top Decliners");
+    XLSX.utils.book_append_sheet(wb, sheet(D.rows.map(r => ({Report:pLabel(r.period), Region:r.region, Chapter:r.chapter, Name:r.name, Weeks:r.weeks, "Total Score":r.total,
+      Attendance:r.raw[0], "Att Pts":r.pts[0], "Ref/Wk":r.raw[1], "Ref Pts":r.pts[1], "Visitor/Wk":r.raw[2], "Visitor Pts":r.pts[2], "121/Wk":r.raw[3], "121 Pts":r.pts[3], "CEU/Wk":r.raw[4], "CEU Pts":r.pts[4]})), {Chapter:32, Name:24, Region:28}), "All Data");
+  }
+  XLSX.writeFile(wb, name);
+}
+const ym = p => `${Math.floor(p/12)}-${String(p%12+1).padStart(2,"0")}`;
+const span = () => `${ym(D.reports[0])} to ${ym(D.reports[D.NR-1])}`;
+$("dlAll").onclick = () => download(D.members, `Power of One Member Trends ${span()}.xlsx`, true);
+$("dlChap").onclick = () => { const c = $("fChapter").value; if (!c) return; download(D.members.filter(m=>m.c===c && m.cur!=null), `${c.replace(/[\\/:*?"<>|]/g,"-")} – Power of One Trends ${span()}.xlsx`, false); };
+</script>
+</body>
+</html>
